@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: aimanager-postgres
+    environment:
+      POSTGRES_USER: aimanager
+      POSTGRES_PASSWORD: aimanager
+      POSTGRES_DB: aimanager
+    ports:
+      - "5434:5432"
+    volumes:
+      - aimanager_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aimanager -d aimanager"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: AIManager.Api/Dockerfile
+    container_name: aimanager-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=aimanager;Username=aimanager;Password=aimanager
+      - Jira__Url=https://infigosoftware.atlassian.net
+      - Jira__User=${JIRA_USER:-}
+      - Jira__ApiToken=${JIRA_API_TOKEN:-}
+      - Teams__PowerAutomateDmUrl=${TEAMS_DM_URL:-}
+      - Teams__ReportRecipient=${REPORT_RECIPIENT:-veaceslav.andreev@infigo.net}
+      - Anthropic__ApiKey=${ANTHROPIC_API_KEY:-}
+      - Anthropic__Model=${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+    ports:
+      - "5080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  aimanager_pg:

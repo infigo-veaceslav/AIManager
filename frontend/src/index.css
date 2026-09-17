@@ -1,0 +1,20 @@
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --border: #262b36;
+  --text: #d8dde6;
+  --muted: #8a93a6;
+  --accent: #4f8cff;
+  --ok: #34d399;
+  --bad: #f87171;
+  --warn: #fbbf24;
+  font: 14px/1.5 system-ui, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }

@@ -1,0 +1,57 @@
+.app { max-width: 1100px; margin: 0 auto; padding: 24px 20px 60px; }
+
+header { display: flex; align-items: baseline; gap: 12px; }
+header h1 { margin: 0; font-size: 24px; }
+.subtitle { color: var(--muted); }
+.hangfire-link { margin-left: auto; font-size: 13px; }
+
+.tabs { display: flex; gap: 4px; margin: 20px 0 16px; border-bottom: 1px solid var(--border); }
+.tab {
+  background: none; border: none; color: var(--muted); padding: 8px 14px; cursor: pointer;
+  border-bottom: 2px solid transparent; font-size: 14px;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+.panel-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+.panel-head h2 { margin: 0; font-size: 18px; }
+.panel-head button, .rule-card button {
+  margin-left: auto; background: var(--accent); color: #fff; border: none; border-radius: 6px;
+  padding: 6px 14px; cursor: pointer; font-size: 13px;
+}
+.rule-card button { margin-left: 0; }
+button:disabled { opacity: 0.5; cursor: default; }
+
+table { width: 100%; border-collapse: collapse; margin: 8px 0 20px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+tbody tr:hover { background: var(--panel); }
+.row-warn td { background: rgba(251, 191, 36, 0.06); }
+
+.ok { color: var(--ok); font-weight: 600; }
+.bad { color: var(--bad); font-weight: 600; }
+.muted { color: var(--muted); }
+.verdict { color: var(--muted); font-size: 13px; max-width: 320px; }
+.error { color: var(--bad); }
+.info { color: var(--accent); }
+
+.check { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+
+.rule-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+.rule-title { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.rule-fields { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px; }
+.rule-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.rule-fields input, .rule-title input[type='text'] {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 8px; font-size: 13px;
+}
+.rule-fields input { min-width: 220px; }
+code { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+
+.link-btn {
+  background: transparent !important; color: var(--muted) !important;
+  border: 1px solid var(--border) !important; align-self: flex-end; font-size: 12px !important;
+}
+section > button {
+  background: var(--accent); color: #fff; border: none; border-radius: 6px;
+  padding: 8px 16px; cursor: pointer; font-size: 14px;
+}
