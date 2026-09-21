@@ -13,6 +13,7 @@ public class AppDbContext : DbContext
     public DbSet<ChaseEvent> ChaseEvents => Set<ChaseEvent>();
     public DbSet<TaskUpdateFinding> TaskUpdateFindings => Set<TaskUpdateFinding>();
     public DbSet<AppSettings> AppSettings => Set<AppSettings>();
+    public DbSet<TeamsChannel> TeamsChannels => Set<TeamsChannel>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -40,6 +41,15 @@ public class AppDbContext : DbContext
             e.Property(x => x.TestRecipientOverride).HasMaxLength(320);
             e.HasOne(x => x.Team).WithMany(t => t.Rules).HasForeignKey(x => x.TeamId)
                 .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.DestinationChannel).WithMany().HasForeignKey(x => x.DestinationChannelId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<TeamsChannel>(e =>
+        {
+            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+            e.Property(x => x.TeamId).IsRequired().HasMaxLength(128);
+            e.Property(x => x.ChannelId).IsRequired().HasMaxLength(256);
         });
 
         b.Entity<ChaseEvent>(e =>

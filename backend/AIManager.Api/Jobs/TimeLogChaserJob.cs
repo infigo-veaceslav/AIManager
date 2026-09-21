@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using AIManager.Api.Data;
 using AIManager.Api.Domain;
@@ -46,6 +47,7 @@ public class TimeLogChaserJob
     {
         var rule = await _db.ChaseRules
             .Include(r => r.Team!).ThenInclude(t => t.Members)
+            .Include(r => r.DestinationChannel)
             .FirstOrDefaultAsync(r => r.Id == ruleId, ct);
 
         if (rule is null || rule.Type != ChaseRuleType.TimeLog || rule.Team is null)
@@ -67,43 +69,89 @@ public class TimeLogChaserJob
         _log.LogInformation("TimeLog rule {RuleId}: checking {Count} members for {Date} (threshold {Threshold}h).",
             ruleId, members.Count, date, threshold);
 
-        foreach (var member in members)
+        var under = members
+            .Select(m => (member: m, hours: hoursByEmail.TryGetValue(m.Email, out var h) ? h : 0.0))
+            .Where(x => x.hours < threshold)
+            .OrderBy(x => x.hours)
+            .ToList();
+
+        var wantsDm = rule.DeliveryMode is DeliveryMode.PerPersonDm or DeliveryMode.Both;
+        var wantsChannel = rule.DeliveryMode is DeliveryMode.ChannelSummary or DeliveryMode.Both;
+
+        if (wantsDm)
         {
-            var hours = hoursByEmail.TryGetValue(member.Email, out var h) ? h : 0.0;
-            if (hours >= threshold) continue;
-
-            // Idempotency: don't re-send if we already delivered for this member+date+rule.
-            var already = await _db.ChaseEvents.AnyAsync(
-                e => e.RuleId == rule.Id && e.MemberId == member.Id &&
-                     e.TargetDate == date && e.Outcome == ChaseOutcome.Sent, ct);
-            if (already)
+            foreach (var (member, hours) in under)
             {
-                _log.LogInformation("Already chased {Member} for {Date}; skipping.", member.Email, date);
-                continue;
+                // Idempotency: don't re-send a DM for this member+date+rule.
+                var already = await _db.ChaseEvents.AnyAsync(
+                    e => e.RuleId == rule.Id && e.MemberId == member.Id &&
+                         e.TargetDate == date && e.Outcome == ChaseOutcome.Sent, ct);
+                if (already)
+                {
+                    _log.LogInformation("Already chased {Member} for {Date}; skipping.", member.Email, date);
+                    continue;
+                }
+
+                var message = RenderTemplate(rule.MessageTemplate ?? DefaultTemplate, member, date, hours);
+                var recipient = string.IsNullOrWhiteSpace(rule.TestRecipientOverride)
+                    ? member.Email
+                    : rule.TestRecipientOverride!;
+
+                var sent = await _teams.SendDmAsync(recipient, message, ct);
+
+                _db.ChaseEvents.Add(new ChaseEvent
+                {
+                    RuleId = rule.Id,
+                    MemberId = member.Id,
+                    TargetDate = date,
+                    Reason = $"Logged {hours:0.##}h (< {threshold:0.##}h) on {date:yyyy-MM-dd}",
+                    DetailJson = JsonSerializer.Serialize(new { hours, threshold, isTest = recipient != member.Email }),
+                    Outcome = sent ? ChaseOutcome.Sent : ChaseOutcome.Failed,
+                    MessageText = message,
+                    DeliveredTo = recipient,
+                    CreatedAtUtc = DateTime.UtcNow
+                });
             }
+        }
 
-            var message = RenderTemplate(rule.MessageTemplate ?? DefaultTemplate, member, date, hours);
-            var recipient = string.IsNullOrWhiteSpace(rule.TestRecipientOverride)
-                ? member.Email
-                : rule.TestRecipientOverride!;
-
-            var sent = await _teams.SendDmAsync(recipient, message, ct);
-
-            _db.ChaseEvents.Add(new ChaseEvent
+        if (wantsChannel && under.Count > 0)
+        {
+            if (rule.DestinationChannel is null)
             {
-                RuleId = rule.Id,
-                MemberId = member.Id,
-                TargetDate = date,
-                Reason = $"Logged {hours:0.##}h (< {threshold:0.##}h) on {date:yyyy-MM-dd}",
-                DetailJson = JsonSerializer.Serialize(new { hours, threshold, isTest = recipient != member.Email }),
-                Outcome = sent ? ChaseOutcome.Sent : ChaseOutcome.Failed,
-                MessageText = message,
-                DeliveredTo = recipient,
-                CreatedAtUtc = DateTime.UtcNow
-            });
+                _log.LogWarning("Rule {RuleId} wants a channel summary but has no destination channel set.", rule.Id);
+            }
+            else
+            {
+                var summary = BuildChannelSummary(date, threshold, under);
+                var sent = await _teams.SendChannelAsync(
+                    rule.DestinationChannel.TeamId, rule.DestinationChannel.ChannelId, summary, ct);
+
+                _db.ChaseEvents.Add(new ChaseEvent
+                {
+                    RuleId = rule.Id,
+                    MemberId = null,
+                    TargetDate = date,
+                    Reason = $"Team summary: {under.Count} under {threshold:0.##}h on {date:yyyy-MM-dd}",
+                    DetailJson = JsonSerializer.Serialize(new { count = under.Count, channel = rule.DestinationChannel.Name }),
+                    Outcome = sent ? ChaseOutcome.Sent : ChaseOutcome.Failed,
+                    MessageText = summary,
+                    DeliveredTo = $"#{rule.DestinationChannel.Name}",
+                    CreatedAtUtc = DateTime.UtcNow
+                });
+            }
         }
 
         await _db.SaveChangesAsync(ct);
+    }
+
+    private static string BuildChannelSummary(DateOnly date, double threshold, List<(TeamMember member, double hours)> under)
+    {
+        var sb = new StringBuilder();
+        sb.Append($"<b>Time not logged for {date:yyyy-MM-dd}</b> (under {threshold:0.##}h):<br>");
+        foreach (var (m, h) in under)
+            sb.Append($"• {m.DisplayName} — {h:0.##}h<br>");
+        sb.Append("<br>Please log your time in Jira.");
+        return sb.ToString();
     }
 
     private async Task EnsureAccountIdsAsync(List<TeamMember> members, CancellationToken ct)

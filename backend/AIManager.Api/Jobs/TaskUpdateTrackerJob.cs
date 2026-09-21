@@ -51,7 +51,7 @@ public class TaskUpdateTrackerJob
 
     public async Task RunRuleAsync(int ruleId, CancellationToken ct = default)
     {
-        var rule = await _db.ChaseRules.Include(r => r.Team)
+        var rule = await _db.ChaseRules.Include(r => r.Team).Include(r => r.DestinationChannel)
             .FirstOrDefaultAsync(r => r.Id == ruleId, ct);
         if (rule is null || rule.Type != ChaseRuleType.TaskUpdate || rule.Team is null)
         {
@@ -107,16 +107,33 @@ public class TaskUpdateTrackerJob
         await _db.SaveChangesAsync(ct);
 
         var report = BuildReport(date, findings, truncated);
-        var reportRecipient = (await _settings.GetEffectiveAsync(ct)).Teams.ReportRecipient;
-        var recipient = string.IsNullOrWhiteSpace(rule.TestRecipientOverride)
-            ? reportRecipient
-            : rule.TestRecipientOverride!;
 
-        var sent = false;
-        if (!string.IsNullOrWhiteSpace(recipient))
-            sent = await _teams.SendDmAsync(recipient, report, ct);
+        // A destination channel wins; otherwise DM the operator (test override, then configured recipient).
+        bool sent;
+        string deliveredTo;
+        ChaseOutcome outcome;
+        if (rule.DestinationChannel is not null)
+        {
+            sent = await _teams.SendChannelAsync(rule.DestinationChannel.TeamId, rule.DestinationChannel.ChannelId, report, ct);
+            deliveredTo = $"#{rule.DestinationChannel.Name}";
+            outcome = sent ? ChaseOutcome.Sent : ChaseOutcome.Failed;
+        }
         else
-            _log.LogWarning("No report recipient configured for TaskUpdate rule {RuleId}.", ruleId);
+        {
+            var reportRecipient = (await _settings.GetEffectiveAsync(ct)).Teams.ReportRecipient;
+            deliveredTo = string.IsNullOrWhiteSpace(rule.TestRecipientOverride) ? reportRecipient : rule.TestRecipientOverride!;
+            if (string.IsNullOrWhiteSpace(deliveredTo))
+            {
+                _log.LogWarning("No report recipient/channel configured for TaskUpdate rule {RuleId}.", ruleId);
+                sent = false;
+                outcome = ChaseOutcome.Skipped;
+            }
+            else
+            {
+                sent = await _teams.SendDmAsync(deliveredTo, report, ct);
+                outcome = sent ? ChaseOutcome.Sent : ChaseOutcome.Failed;
+            }
+        }
 
         _db.ChaseEvents.Add(new ChaseEvent
         {
@@ -130,10 +147,9 @@ public class TaskUpdateTrackerJob
                 incomplete = findings.Count(f => !f.IsComplete),
                 truncated
             }),
-            Outcome = string.IsNullOrWhiteSpace(recipient) ? ChaseOutcome.Skipped
-                : sent ? ChaseOutcome.Sent : ChaseOutcome.Failed,
+            Outcome = outcome,
             MessageText = report,
-            DeliveredTo = recipient,
+            DeliveredTo = deliveredTo,
             CreatedAtUtc = DateTime.UtcNow
         });
         await _db.SaveChangesAsync(ct);

@@ -27,6 +27,13 @@ public class ChaseRule
 
     public ChaseChannel Channel { get; set; } = ChaseChannel.TeamsDm;
 
+    /// <summary>How output is delivered: per-person DMs, a channel summary, or both.</summary>
+    public DeliveryMode DeliveryMode { get; set; } = DeliveryMode.PerPersonDm;
+
+    /// <summary>Target channel for summaries/reports (required when DeliveryMode uses a channel).</summary>
+    public int? DestinationChannelId { get; set; }
+    public TeamsChannel? DestinationChannel { get; set; }
+
     /// <summary>
     /// While validating: if set, every DM is redirected to this email instead of the real
     /// recipient. Clear it to go live.

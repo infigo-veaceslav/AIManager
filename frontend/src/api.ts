@@ -28,6 +28,16 @@ export interface Rule {
   channel: 'TeamsDm' | 'Report'
   testRecipientOverride: string | null
   configJson: string | null
+  deliveryMode: 'PerPersonDm' | 'ChannelSummary' | 'Both'
+  destinationChannelId: number | null
+  destinationChannelName: string | null
+}
+
+export interface Channel {
+  id: number
+  name: string
+  teamId: string
+  channelId: string
 }
 
 export interface ChaseEvent {
@@ -128,4 +138,8 @@ export const api = {
   getSettings: () => http<SettingsDto>('/api/settings'),
   updateSettings: (body: SettingsUpdate) =>
     http<void>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
+  getChannels: () => http<Channel[]>('/api/channels'),
+  createChannel: (body: { name: string; teamId: string; channelId: string }) =>
+    http<Channel>('/api/channels', { method: 'POST', body: JSON.stringify(body) }),
+  deleteChannel: (id: number) => http<void>(`/api/channels/${id}`, { method: 'DELETE' }),
 }

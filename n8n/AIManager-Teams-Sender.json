@@ -1,0 +1,119 @@
+{
+  "name": "AIManager - Teams Sender",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "aimanager-teams",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "id": "11111111-1111-1111-1111-111111111111",
+      "name": "Webhook",
+      "webhookId": "aimanager-teams-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-type-channel",
+              "leftValue": "={{ $json.body.type }}",
+              "rightValue": "channel",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [240, 0],
+      "id": "22222222-2222-2222-2222-222222222222",
+      "name": "Route by type"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.microsoft.com/v1.0/chats",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftTeamsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chatType: 'oneOnOne', members: [ { '@odata.type': '#microsoft.graph.aadUserConversationMember', roles: ['owner'], 'user@odata.bind': 'https://graph.microsoft.com/v1.0/users/' + $json.body.recipient }, { '@odata.type': '#microsoft.graph.aadUserConversationMember', roles: ['owner'], 'user@odata.bind': 'https://graph.microsoft.com/v1.0/users/veaceslav.andreev@infigo.net' } ] }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 120],
+      "id": "33333333-3333-3333-3333-333333333333",
+      "name": "Create 1:1 chat",
+      "credentials": {
+        "microsoftTeamsOAuth2Api": { "id": "DWg3p2r0aSBXOgrY", "name": "Veaceslav APP" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.microsoft.com/v1.0/chats/{{ $json.id }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftTeamsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ body: { contentType: 'html', content: $('Webhook').item.json.body.message } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 120],
+      "id": "44444444-4444-4444-4444-444444444444",
+      "name": "Send DM",
+      "credentials": {
+        "microsoftTeamsOAuth2Api": { "id": "DWg3p2r0aSBXOgrY", "name": "Veaceslav APP" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.microsoft.com/v1.0/teams/{{ $json.body.teamId }}/channels/{{ $json.body.channelId }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftTeamsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ body: { contentType: 'html', content: $json.body.message } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, -120],
+      "id": "55555555-5555-5555-5555-555555555555",
+      "name": "Send channel message",
+      "credentials": {
+        "microsoftTeamsOAuth2Api": { "id": "DWg3p2r0aSBXOgrY", "name": "Veaceslav APP" }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Route by type", "type": "main", "index": 0 }]]
+    },
+    "Route by type": {
+      "main": [
+        [{ "node": "Send channel message", "type": "main", "index": 0 }],
+        [{ "node": "Create 1:1 chat", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create 1:1 chat": {
+      "main": [[{ "node": "Send DM", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": []
+}

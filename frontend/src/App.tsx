@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 import {
   api,
+  type Channel,
   type ChaseEvent,
   type ComplianceResult,
   type Finding,
@@ -11,7 +12,7 @@ import {
   type Team,
 } from './api'
 
-type Tab = 'compliance' | 'history' | 'findings' | 'rules' | 'roster' | 'settings'
+type Tab = 'compliance' | 'history' | 'findings' | 'rules' | 'roster' | 'channels' | 'settings'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'compliance', label: 'Compliance' },
@@ -19,6 +20,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'history', label: 'Chase history' },
   { key: 'rules', label: 'Rules' },
   { key: 'roster', label: 'Roster' },
+  { key: 'channels', label: 'Channels' },
   { key: 'settings', label: 'Settings' },
 ]
 
@@ -46,6 +48,7 @@ export default function App() {
         {tab === 'history' && <HistoryPanel />}
         {tab === 'rules' && <RulesPanel />}
         {tab === 'roster' && <RosterPanel />}
+        {tab === 'channels' && <ChannelsPanel />}
         {tab === 'settings' && <SettingsPanel />}
       </main>
     </div>
@@ -179,6 +182,7 @@ function HistoryPanel() {
 
 function RulesPanel() {
   const { data, error, reload } = useAsync<Rule[]>(() => api.getRules())
+  const channels = useAsync<Channel[]>(() => api.getChannels())
   const [busy, setBusy] = useState<number | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
 
@@ -219,6 +223,23 @@ function RulesPanel() {
               <input defaultValue={r.testRecipientOverride ?? ''} placeholder="(none)"
                 onBlur={(e) => e.target.value !== (r.testRecipientOverride ?? '') && save(r.id, { testRecipientOverride: e.target.value })} />
             </label>
+            {r.type === 'TimeLog' && (
+              <label>Delivery
+                <select value={r.deliveryMode} disabled={busy === r.id}
+                  onChange={(e) => save(r.id, { deliveryMode: e.target.value as Rule['deliveryMode'] })}>
+                  <option value="PerPersonDm">Per-person DM</option>
+                  <option value="ChannelSummary">Channel summary</option>
+                  <option value="Both">Both</option>
+                </select>
+              </label>
+            )}
+            <label>{r.type === 'TaskUpdate' ? 'Report to channel' : 'Summary channel'}
+              <select value={r.destinationChannelId ?? 0} disabled={busy === r.id}
+                onChange={(e) => save(r.id, { destinationChannelId: Number(e.target.value) })}>
+                <option value={0}>{r.type === 'TaskUpdate' ? '(DM to operator)' : '(none)'}</option>
+                {(channels.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
           </div>
           <button onClick={() => run(r.id)} disabled={busy === r.id}>Run now</button>
         </div>
@@ -254,6 +275,63 @@ function RosterPanel() {
           </tbody>
         </table>
       ))}
+    </section>
+  )
+}
+
+function ChannelsPanel() {
+  const { data, reload } = useAsync<Channel[]>(() => api.getChannels())
+  const [name, setName] = useState('')
+  const [teamId, setTeamId] = useState('')
+  const [channelId, setChannelId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+
+  const add = async () => {
+    if (!name || !teamId || !channelId) { setMsg('Name, Team ID and Channel ID are all required.'); return }
+    setBusy(true); setMsg(null)
+    try {
+      await api.createChannel({ name, teamId, channelId })
+      setName(''); setTeamId(''); setChannelId(''); await reload()
+    } catch (e) { setMsg(String(e)) } finally { setBusy(false) }
+  }
+  const remove = async (id: number) => {
+    setBusy(true)
+    try { await api.deleteChannel(id); await reload() } finally { setBusy(false) }
+  }
+
+  return (
+    <section>
+      <div className="panel-head"><h2>Channels</h2></div>
+      <p className="muted">
+        Register Teams channels here, then pick one as a rule's summary/report destination. Get the
+        Team ID &amp; Channel ID from the channel's ••• → <b>Get link to channel</b> — the URL contains
+        <code>groupId=&lt;Team ID&gt;</code> and the channel id after <code>/channel/</code>.
+      </p>
+      {msg && <p className="error">{msg}</p>}
+      <table>
+        <thead><tr><th>Name</th><th>Team ID</th><th>Channel ID</th><th></th></tr></thead>
+        <tbody>
+          {(data ?? []).map((c) => (
+            <tr key={c.id}>
+              <td>{c.name}</td>
+              <td className="muted">{c.teamId}</td>
+              <td className="muted">{c.channelId}</td>
+              <td><button className="link-btn" disabled={busy} onClick={() => remove(c.id)}>Delete</button></td>
+            </tr>
+          ))}
+          {data && data.length === 0 && <tr><td colSpan={4} className="muted">No channels registered yet.</td></tr>}
+        </tbody>
+      </table>
+      <div className="rule-card">
+        <div className="rule-title"><strong>Add channel</strong></div>
+        <div className="rule-fields">
+          <label>Name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="Dev — Standup" /></label>
+          <label>Team ID (groupId)<input value={teamId} onChange={(e) => setTeamId(e.target.value)} /></label>
+          <label>Channel ID<input value={channelId} onChange={(e) => setChannelId(e.target.value)} /></label>
+        </div>
+        <button disabled={busy} onClick={add}>Add channel</button>
+      </div>
     </section>
   )
 }
@@ -330,7 +408,7 @@ function SettingsPanel() {
       <div className="rule-card">
         <div className="rule-title"><strong>Teams</strong></div>
         <div className="rule-fields">
-          <label>Power Automate DM URL ({secretBadge(data.teams.powerAutomateDmUrlSet)})
+          <label>Power Automate Teams flow URL ({secretBadge(data.teams.powerAutomateDmUrlSet)})
             <input type="password" value={teamsUrl} placeholder="•••••• (unchanged)" onChange={(e) => setTeamsUrl(e.target.value)} />
           </label>
           <button className="link-btn" disabled={busy} onClick={() => apply({ teamsPowerAutomateDmUrl: '' }, 'Teams URL override cleared.')}>Clear URL</button>

@@ -27,3 +27,23 @@ public enum ChaseOutcome
     Failed = 1,
     Skipped = 2
 }
+
+/// <summary>Where a message is delivered via the unified Power Automate flow.</summary>
+public enum TeamsTargetType
+{
+    User = 0,
+    Channel = 1
+}
+
+/// <summary>How a rule delivers its output.</summary>
+public enum DeliveryMode
+{
+    /// <summary>A 1:1 DM to each affected person (default for time-log chasing).</summary>
+    PerPersonDm = 0,
+
+    /// <summary>A single summary message to a channel (team-wide nudge / report).</summary>
+    ChannelSummary = 1,
+
+    /// <summary>Both a per-person DM and a channel summary.</summary>
+    Both = 2
+}

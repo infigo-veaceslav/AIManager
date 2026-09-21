@@ -24,17 +24,21 @@ public class RulesController : ControllerBase
     }
 
     public record RuleDto(int Id, int TeamId, string TeamName, string Type, bool Enabled, string Cron,
-        double? ThresholdHours, string? MessageTemplate, string Channel, string? TestRecipientOverride, string? ConfigJson);
+        double? ThresholdHours, string? MessageTemplate, string Channel, string? TestRecipientOverride,
+        string? ConfigJson, string DeliveryMode, int? DestinationChannelId, string? DestinationChannelName);
 
     public record UpdateRuleRequest(bool? Enabled, string? Cron, double? ThresholdHours,
-        string? MessageTemplate, string? TestRecipientOverride, string? ConfigJson);
+        string? MessageTemplate, string? TestRecipientOverride, string? ConfigJson,
+        string? DeliveryMode, int? DestinationChannelId);
 
     [HttpGet]
     public async Task<ActionResult<List<RuleDto>>> Get()
     {
-        return await _db.ChaseRules.Include(r => r.Team)
+        return await _db.ChaseRules.Include(r => r.Team).Include(r => r.DestinationChannel)
             .Select(r => new RuleDto(r.Id, r.TeamId, r.Team!.Name, r.Type.ToString(), r.Enabled, r.Cron,
-                r.ThresholdHours, r.MessageTemplate, r.Channel.ToString(), r.TestRecipientOverride, r.ConfigJson))
+                r.ThresholdHours, r.MessageTemplate, r.Channel.ToString(), r.TestRecipientOverride, r.ConfigJson,
+                r.DeliveryMode.ToString(), r.DestinationChannelId,
+                r.DestinationChannel != null ? r.DestinationChannel.Name : null))
             .ToListAsync();
     }
 
@@ -52,6 +56,11 @@ public class RulesController : ControllerBase
         if (req.TestRecipientOverride is not null)
             rule.TestRecipientOverride = req.TestRecipientOverride.Length == 0 ? null : req.TestRecipientOverride;
         if (req.ConfigJson is not null) rule.ConfigJson = req.ConfigJson;
+        if (req.DeliveryMode is not null && Enum.TryParse<DeliveryMode>(req.DeliveryMode, true, out var dm))
+            rule.DeliveryMode = dm;
+        // 0 or negative clears the destination channel; a positive id sets it.
+        if (req.DestinationChannelId is not null)
+            rule.DestinationChannelId = req.DestinationChannelId.Value <= 0 ? null : req.DestinationChannelId.Value;
 
         await _db.SaveChangesAsync();
         SyncRecurringJob(rule);
