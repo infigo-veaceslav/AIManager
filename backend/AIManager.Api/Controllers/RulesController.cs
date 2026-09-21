@@ -78,6 +78,7 @@ public class RulesController : ControllerBase
         {
             ChaseRuleType.TimeLog => _jobs.Enqueue<TimeLogChaserJob>(j => j.RunRuleAsync(id, CancellationToken.None)),
             ChaseRuleType.TaskUpdate => _jobs.Enqueue<TaskUpdateTrackerJob>(j => j.RunRuleAsync(id, CancellationToken.None)),
+            ChaseRuleType.SupportDigest => _jobs.Enqueue<SupportDigestJob>(j => j.RunRuleAsync(id, CancellationToken.None)),
             _ => null
         };
         return Accepted(new { jobId });
@@ -97,5 +98,7 @@ public class RulesController : ControllerBase
             _recurring.AddOrUpdate<TimeLogChaserJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), rule.Cron, options);
         else if (rule.Type == ChaseRuleType.TaskUpdate)
             _recurring.AddOrUpdate<TaskUpdateTrackerJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), rule.Cron, options);
+        else if (rule.Type == ChaseRuleType.SupportDigest)
+            _recurring.AddOrUpdate<SupportDigestJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), rule.Cron, options);
     }
 }

@@ -7,7 +7,10 @@ public enum ChaseRuleType
     TimeLog = 0,
 
     /// <summary>Check tickets for a proper progress update (work done / remaining / estimate).</summary>
-    TaskUpdate = 1
+    TaskUpdate = 1,
+
+    /// <summary>Post a support-ticket digest to a channel, grouped and @mentioned per responsible person.</summary>
+    SupportDigest = 2
 }
 
 /// <summary>Where a rule delivers its output.</summary>

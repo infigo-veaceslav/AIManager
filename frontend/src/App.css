@@ -46,6 +46,11 @@ tbody tr:hover { background: var(--panel); }
   background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 8px; font-size: 13px;
 }
 .rule-fields input { min-width: 220px; }
+.config-editor { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+.config-editor textarea {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 8px; font-family: var(--mono, ui-monospace, Consolas, monospace); font-size: 12px; width: 100%;
+}
 code { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
 
 .link-btn {

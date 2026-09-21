@@ -182,6 +182,40 @@ function HistoryPanel() {
   )
 }
 
+function SupportConfig({ rule, save, busy }: {
+  rule: Rule
+  save: (id: number, body: Partial<Rule>) => void
+  busy: boolean
+}) {
+  let cfg: Record<string, unknown> = {}
+  try { cfg = rule.configJson ? JSON.parse(rule.configJson) : {} } catch { cfg = {} }
+  const joined = (a: unknown) => (Array.isArray(a) ? a.join(', ') : '')
+  const toList = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean)
+  const patch = (p: Record<string, unknown>) => save(rule.id, { configJson: JSON.stringify({ ...cfg, ...p }) })
+
+  return (
+    <div className="rule-fields">
+      <label>Reporters to cover (blank = all)
+        <input defaultValue={joined(cfg.reporterFilter)} placeholder="all reporters" disabled={busy}
+          onBlur={(e) => { if (e.target.value.trim() !== joined(cfg.reporterFilter)) patch({ reporterFilter: toList(e.target.value) }) }} />
+      </label>
+      <label>Assignees to cover (blank = all)
+        <input defaultValue={joined(cfg.assigneeFilter)} placeholder="all assignees" disabled={busy}
+          onBlur={(e) => { if (e.target.value.trim() !== joined(cfg.assigneeFilter)) patch({ assigneeFilter: toList(e.target.value) }) }} />
+      </label>
+      <label>Max per person (0 = no cap)
+        <input type="number" defaultValue={Number(cfg.maxPerPerson ?? 0)} disabled={busy}
+          onBlur={(e) => { if (Number(e.target.value) !== Number(cfg.maxPerPerson ?? 0)) patch({ maxPerPerson: Number(e.target.value) }) }} />
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={!!cfg.mention} disabled={busy}
+          onChange={(e) => patch({ mention: e.target.checked })} />
+        @mention people (needs the mentions n8n workflow)
+      </label>
+    </div>
+  )
+}
+
 function RulesPanel() {
   const { data, error, reload } = useAsync<Rule[]>(() => api.getRules())
   const channels = useAsync<Channel[]>(() => api.getChannels())
@@ -235,7 +269,7 @@ function RulesPanel() {
                 </select>
               </label>
             )}
-            <label>{r.type === 'TaskUpdate' ? 'Report to channel' : 'Summary channel'}
+            <label>{r.type === 'TaskUpdate' ? 'Report to channel' : r.type === 'SupportDigest' ? 'Post to channel' : 'Summary channel'}
               <select value={r.destinationChannelId ?? 0} disabled={busy === r.id}
                 onChange={(e) => save(r.id, { destinationChannelId: Number(e.target.value) })}>
                 <option value={0}>{r.type === 'TaskUpdate' ? '(DM to operator)' : '(none)'}</option>
@@ -243,6 +277,18 @@ function RulesPanel() {
               </select>
             </label>
           </div>
+          {r.type === 'SupportDigest' && <SupportConfig rule={r} save={save} busy={busy === r.id} />}
+          {r.type === 'TaskUpdate' && (
+            <label className="config-editor">Config (JSON)
+              <textarea defaultValue={r.configJson ?? ''} rows={7} spellCheck={false}
+                onBlur={(e) => {
+                  const val = e.target.value.trim()
+                  if (val === (r.configJson ?? '')) return
+                  if (val) { try { JSON.parse(val) } catch { setMsg('Invalid JSON — not saved'); return } }
+                  save(r.id, { configJson: val })
+                }} />
+            </label>
+          )}
           <button onClick={() => run(r.id)} disabled={busy === r.id}>Run now</button>
         </div>
       ))}

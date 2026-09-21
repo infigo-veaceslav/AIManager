@@ -39,6 +39,7 @@ builder.Services.AddHttpClient<IUpdateJudge, AnthropicUpdateJudge>(c => c.Timeou
 // ---- Jobs ----
 builder.Services.AddScoped<TimeLogChaserJob>();
 builder.Services.AddScoped<TaskUpdateTrackerJob>();
+builder.Services.AddScoped<SupportDigestJob>();
 
 // ---- Hangfire ----
 builder.Services.AddHangfire(cfg => cfg
@@ -63,6 +64,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.MigrateAsync();
     await DbSeeder.SeedAsync(db);
+    await DbSeeder.EnsureSupportDigestAsync(db);
 }
 
 if (app.Environment.IsDevelopment())
@@ -103,5 +105,7 @@ static void RegisterRecurringJobs(IServiceProvider services)
             manager.AddOrUpdate<TimeLogChaserJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), rule.Cron, options);
         else if (rule.Type == AIManager.Api.Domain.ChaseRuleType.TaskUpdate)
             manager.AddOrUpdate<TaskUpdateTrackerJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), rule.Cron, options);
+        else if (rule.Type == AIManager.Api.Domain.ChaseRuleType.SupportDigest)
+            manager.AddOrUpdate<SupportDigestJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), rule.Cron, options);
     }
 }

@@ -128,6 +128,65 @@ public class JiraService : IJiraService
         return issues;
     }
 
+    public async Task<List<SupportIssue>> GetSupportIssuesAsync(
+        string projectKey, IReadOnlyCollection<string> statuses, IReadOnlyCollection<string> reporterEmails,
+        int maxIssues, CancellationToken ct = default)
+    {
+        var statusList = string.Join(",", statuses.Select(s => $"\"{s}\""));
+        var jql = $"project = {projectKey} AND status in ({statusList}) ORDER BY updated DESC";
+
+        var issues = new List<SupportIssue>();
+        string? pageToken = null;
+        do
+        {
+            var url = $"rest/api/3/search/jql?jql={Uri.EscapeDataString(jql)}&maxResults=100" +
+                      "&fields=summary,status,assignee,reporter" +
+                      (pageToken is null ? "" : $"&nextPageToken={Uri.EscapeDataString(pageToken)}");
+
+            using var doc = await GetJsonAsync(url, ct);
+            if (doc is null) break;
+
+            if (doc.RootElement.TryGetProperty("issues", out var arr))
+            {
+                foreach (var issue in arr.EnumerateArray())
+                {
+                    var key = issue.GetProperty("key").GetString() ?? "";
+                    var fields = issue.GetProperty("fields");
+                    var summary = fields.TryGetProperty("summary", out var s) ? s.GetString() ?? "" : "";
+                    var status = fields.TryGetProperty("status", out var st) && st.TryGetProperty("name", out var sn)
+                        ? sn.GetString() ?? "" : "";
+                    var (assigneeName, assigneeEmail) = ReadUser(fields, "assignee");
+                    var (reporterName, reporterEmail) = ReadUser(fields, "reporter");
+                    issues.Add(new SupportIssue(key, summary, status, assigneeName, assigneeEmail, reporterName, reporterEmail));
+                }
+            }
+
+            pageToken = doc.RootElement.TryGetProperty("nextPageToken", out var nt) ? nt.GetString() : null;
+            if (maxIssues > 0 && issues.Count >= maxIssues) break;
+        } while (!string.IsNullOrEmpty(pageToken));
+
+        if (reporterEmails.Count > 0)
+        {
+            var set = new HashSet<string>(reporterEmails, StringComparer.OrdinalIgnoreCase);
+            issues = issues.Where(i => i.ReporterEmail is not null && set.Contains(i.ReporterEmail)).ToList();
+        }
+        if (maxIssues > 0 && issues.Count > maxIssues)
+            issues = issues.Take(maxIssues).ToList();
+
+        return issues;
+    }
+
+    private static (string? Name, string? Email) ReadUser(JsonElement fields, string property)
+    {
+        if (fields.TryGetProperty(property, out var u) && u.ValueKind == JsonValueKind.Object)
+        {
+            var name = u.TryGetProperty("displayName", out var dn) ? dn.GetString() : null;
+            var email = u.TryGetProperty("emailAddress", out var ae) ? ae.GetString() : null;
+            return (name, email);
+        }
+        return (null, null);
+    }
+
     public async Task<List<IssueComment>> GetCommentsAsync(
         string issueKey, DateTimeOffset since, CancellationToken ct = default)
     {

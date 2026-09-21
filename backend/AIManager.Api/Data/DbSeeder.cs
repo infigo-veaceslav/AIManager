@@ -73,4 +73,43 @@ public static class DbSeeder
 
         await db.SaveChangesAsync(ct);
     }
+
+    private const string SupportDigestDefaultConfig =
+        "{\"projectKey\":\"SUP\"," +
+        "\"assigneeStatuses\":[\"Triage\",\"Assigned\",\"In Progress\",\"Needs assignee attention\",\"Support Backlog\"]," +
+        "\"reporterStatuses\":[\"Customer Feedback\",\"Needs reporter attention\"]," +
+        "\"reporterFilter\":[]," +
+        "\"assigneeFilter\":[]," +
+        "\"operatorEmail\":\"veaceslav.andreev@infigo.net\"," +
+        "\"operatorName\":\"Veaceslav Andreev\"," +
+        "\"maxPerPerson\":0," +
+        "\"mention\":false}";
+
+    /// <summary>
+    /// Idempotently ensures a Support team + a (disabled) SupportDigest rule exist — runs even on an
+    /// already-populated DB. Enable it after registering the destination channel.
+    /// </summary>
+    public static async Task EnsureSupportDigestAsync(AppDbContext db, CancellationToken ct = default)
+    {
+        if (await db.ChaseRules.AnyAsync(r => r.Type == ChaseRuleType.SupportDigest, ct)) return;
+
+        var team = await db.Teams.FirstOrDefaultAsync(t => t.Name == "Support", ct);
+        if (team is null)
+        {
+            team = new Team { Name = "Support", Timezone = "Europe/Chisinau", WorkingDays = "1,2,3,4", Enabled = true };
+            db.Teams.Add(team);
+            await db.SaveChangesAsync(ct);
+        }
+
+        db.ChaseRules.Add(new ChaseRule
+        {
+            TeamId = team.Id,
+            Type = ChaseRuleType.SupportDigest,
+            Enabled = false, // turn on once the destination channel is set
+            Cron = "0 10 * * 1-4",
+            Channel = ChaseChannel.Report,
+            ConfigJson = SupportDigestDefaultConfig
+        });
+        await db.SaveChangesAsync(ct);
+    }
 }

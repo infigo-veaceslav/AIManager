@@ -12,3 +12,12 @@ public record IssueComment(
     string? AuthorEmail,
     DateTimeOffset Created,
     string Text);
+
+public record SupportIssue(
+    string Key,
+    string Summary,
+    string Status,
+    string? AssigneeName,
+    string? AssigneeEmail,
+    string? ReporterName,
+    string? ReporterEmail);

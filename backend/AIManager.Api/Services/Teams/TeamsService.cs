@@ -27,6 +27,17 @@ public class TeamsService : ITeamsService
     public Task<bool> SendChannelAsync(string teamId, string channelId, string htmlMessage, CancellationToken ct = default) =>
         PostAsync(new { type = "channel", teamId, channelId, message = htmlMessage }, $"channel {teamId}/{channelId}", ct);
 
+    public Task<bool> SendChannelWithMentionsAsync(
+        string teamId, string channelId, string htmlMessage, IReadOnlyList<MentionTarget> people, CancellationToken ct = default) =>
+        PostAsync(new
+        {
+            type = "channelMention",
+            teamId,
+            channelId,
+            message = htmlMessage,
+            people = people.Select(p => new { index = p.Index, email = p.Email, displayName = p.DisplayName })
+        }, $"channelMention {teamId}/{channelId} ({people.Count} mentioned)", ct);
+
     private async Task<bool> PostAsync(object payload, string description, CancellationToken ct)
     {
         var url = (await _settings.GetEffectiveAsync(ct)).Teams.PowerAutomateDmUrl;

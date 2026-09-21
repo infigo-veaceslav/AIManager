@@ -20,7 +20,7 @@ export interface Rule {
   id: number
   teamId: number
   teamName: string
-  type: 'TimeLog' | 'TaskUpdate'
+  type: 'TimeLog' | 'TaskUpdate' | 'SupportDigest'
   enabled: boolean
   cron: string
   thresholdHours: number | null
