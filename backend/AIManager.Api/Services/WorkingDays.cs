@@ -17,11 +17,30 @@ public static class WorkingDays
         return DateOnly.FromDateTime(local.Date);
     }
 
-    /// <summary>The most recent working day strictly before "today" in the given timezone.</summary>
-    public static DateOnly PreviousWorkingDay(string tz, DateTimeOffset nowUtc)
+    /// <summary>Parse a CSV of DayOfWeek ints (Sun=0…Sat=6). Falls back to Mon–Fri when empty/invalid.</summary>
+    public static ISet<DayOfWeek> ParseWorkingDays(string? csv)
     {
+        var set = new HashSet<DayOfWeek>();
+        if (!string.IsNullOrWhiteSpace(csv))
+            foreach (var part in csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                if (int.TryParse(part, out var n) && n is >= 0 and <= 6)
+                    set.Add((DayOfWeek)n);
+
+        if (set.Count == 0)
+            set = new HashSet<DayOfWeek>
+            {
+                DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday
+            };
+        return set;
+    }
+
+    /// <summary>The most recent working day strictly before "today", honoring the team's working days.</summary>
+    public static DateOnly PreviousWorkingDay(string tz, string? workingDaysCsv, DateTimeOffset nowUtc)
+    {
+        var working = ParseWorkingDays(workingDaysCsv);
         var d = TodayIn(tz, nowUtc).AddDays(-1);
-        while (d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
+        var guard = 0;
+        while (!working.Contains(d.DayOfWeek) && guard++ < 14)
             d = d.AddDays(-1);
         return d;
     }

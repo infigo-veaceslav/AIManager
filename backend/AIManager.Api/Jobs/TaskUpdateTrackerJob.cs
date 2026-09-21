@@ -61,10 +61,19 @@ public class TaskUpdateTrackerJob
 
         var cfg = ParseConfig(rule.ConfigJson);
         var tz = rule.Team.Timezone;
-        var date = WorkingDays.PreviousWorkingDay(tz, DateTimeOffset.UtcNow);
+        var date = WorkingDays.PreviousWorkingDay(tz, rule.Team.WorkingDays, DateTimeOffset.UtcNow);
         var since = DateTimeOffset.UtcNow.AddDays(-Math.Max(1, cfg.LookbackDays));
 
-        var issues = await _jira.GetActiveOrWorkloggedIssuesAsync(date, cfg.ScopeJql, ct);
+        List<IssueSummary> issues;
+        try
+        {
+            issues = await _jira.GetActiveOrWorkloggedIssuesAsync(date, cfg.ScopeJql, ct);
+        }
+        catch (JiraUnavailableException ex)
+        {
+            await RecordSkipAsync(rule, date, ex, ct);
+            return;
+        }
 
         var truncated = false;
         if (issues.Count > cfg.MaxIssues)
@@ -83,7 +92,16 @@ public class TaskUpdateTrackerJob
         var findings = new List<TaskUpdateFinding>();
         foreach (var issue in issues)
         {
-            var comments = await _jira.GetCommentsAsync(issue.Key, since, ct);
+            IReadOnlyList<IssueComment> comments;
+            try
+            {
+                comments = await _jira.GetCommentsAsync(issue.Key, since, ct);
+            }
+            catch (JiraUnavailableException ex)
+            {
+                await RecordSkipAsync(rule, date, ex, ct);
+                return;
+            }
             var j = await _judge.JudgeAsync(issue.Key, issue.Summary, comments, ct);
 
             findings.Add(new TaskUpdateFinding
@@ -150,6 +168,22 @@ public class TaskUpdateTrackerJob
             Outcome = outcome,
             MessageText = report,
             DeliveredTo = deliveredTo,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private async Task RecordSkipAsync(ChaseRule rule, DateOnly date, Exception ex, CancellationToken ct)
+    {
+        _log.LogError(ex, "TaskUpdate rule {RuleId}: Jira unavailable; skipping run (report not generated).", rule.Id);
+        _db.ChaseEvents.Add(new ChaseEvent
+        {
+            RuleId = rule.Id,
+            MemberId = null,
+            TargetDate = date,
+            Reason = "Skipped: Jira throttled/unavailable — report not generated",
+            DetailJson = JsonSerializer.Serialize(new { error = ex.Message }),
+            Outcome = ChaseOutcome.Skipped,
             CreatedAtUtc = DateTime.UtcNow
         });
         await _db.SaveChangesAsync(ct);

@@ -57,14 +57,34 @@ public class TimeLogChaserJob
         }
 
         var tz = rule.Team.Timezone;
-        var date = WorkingDays.PreviousWorkingDay(tz, DateTimeOffset.UtcNow);
+        var date = WorkingDays.PreviousWorkingDay(tz, rule.Team.WorkingDays, DateTimeOffset.UtcNow);
         var threshold = rule.ThresholdHours ?? 5.0;
         var members = rule.Team.Members.Where(m => m.Active).ToList();
 
-        await EnsureAccountIdsAsync(members, ct);
-        var accountIds = members.Where(m => m.JiraAccountId != null).Select(m => m.JiraAccountId!).ToList();
-
-        var hoursByEmail = await _jira.GetWorklogHoursByEmailAsync(date, accountIds, tz, ct);
+        Dictionary<string, double> hoursByEmail;
+        try
+        {
+            await EnsureAccountIdsAsync(members, ct);
+            var accountIds = members.Where(m => m.JiraAccountId != null).Select(m => m.JiraAccountId!).ToList();
+            hoursByEmail = await _jira.GetWorklogHoursByEmailAsync(date, accountIds, tz, ct);
+        }
+        catch (JiraUnavailableException ex)
+        {
+            // Fail safe: never chase on incomplete data — skip the run and try again next schedule.
+            _log.LogError(ex, "TimeLog rule {RuleId}: Jira unavailable; skipping run (no reminders sent).", rule.Id);
+            _db.ChaseEvents.Add(new ChaseEvent
+            {
+                RuleId = rule.Id,
+                MemberId = null,
+                TargetDate = date,
+                Reason = "Skipped: Jira throttled/unavailable — no reminders sent",
+                DetailJson = JsonSerializer.Serialize(new { error = ex.Message }),
+                Outcome = ChaseOutcome.Skipped,
+                CreatedAtUtc = DateTime.UtcNow
+            });
+            await _db.SaveChangesAsync(ct);
+            return;
+        }
 
         _log.LogInformation("TimeLog rule {RuleId}: checking {Count} members for {Date} (threshold {Threshold}h).",
             ruleId, members.Count, date, threshold);

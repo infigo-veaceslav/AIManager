@@ -78,6 +78,7 @@ export interface ComplianceRow {
   email: string
   hours: number
   ok: boolean
+  active: boolean
 }
 
 export interface ComplianceResult {

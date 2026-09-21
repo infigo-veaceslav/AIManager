@@ -88,19 +88,21 @@ function CompliancePanel() {
       {data && (
         <>
           <p className="muted">
-            {data.teamName} · {data.targetDate} · threshold {data.threshold}h · live from Jira
+            {data.teamName} · {data.targetDate} · threshold {data.threshold}h · live from Jira ·
+            showing all members ({data.rows.filter((r) => r.active).length} in chase scope)
           </p>
           <table>
-            <thead><tr><th>Member</th><th>Hours</th><th>Status</th></tr></thead>
+            <thead><tr><th>Member</th><th>Hours</th><th>Status</th><th>Chase scope</th></tr></thead>
             <tbody>
               {data.rows.map((r) => (
-                <tr key={r.memberId}>
+                <tr key={r.memberId} className={r.active ? '' : 'row-muted'}>
                   <td>{r.displayName}</td>
                   <td>{r.hours.toFixed(2)}h</td>
                   <td>{r.ok ? <span className="ok">OK</span> : <span className="bad">Under</span>}</td>
+                  <td>{r.active ? <span className="ok">✓ chased</span> : <span className="muted">not chased</span>}</td>
                 </tr>
               ))}
-              {data.rows.length === 0 && <tr><td colSpan={3} className="muted">No active members.</td></tr>}
+              {data.rows.length === 0 && <tr><td colSpan={4} className="muted">No members.</td></tr>}
             </tbody>
           </table>
         </>

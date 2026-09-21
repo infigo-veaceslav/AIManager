@@ -36,6 +36,7 @@ public static class DbSeeder
         {
             Name = "Development",
             Timezone = "Europe/Chisinau",
+            WorkingDays = "1,2,3,4", // Mon–Thu (no Fridays)
             Enabled = true,
             Members = DevRoster.Select(r => new TeamMember
             {
@@ -53,7 +54,7 @@ public static class DbSeeder
                 TeamId = team.Id,
                 Type = ChaseRuleType.TimeLog,
                 Enabled = true,
-                Cron = "0 10 * * 1-5",
+                Cron = "0 10 * * 1-4",
                 ThresholdHours = 5,
                 Channel = ChaseChannel.TeamsDm,
                 TestRecipientOverride = Operator, // redirect test DMs to the operator
@@ -64,7 +65,7 @@ public static class DbSeeder
                 TeamId = team.Id,
                 Type = ChaseRuleType.TaskUpdate,
                 Enabled = true,
-                Cron = "0 9 * * 1-5",
+                Cron = "0 9 * * 1-4",
                 Channel = ChaseChannel.Report,
                 TestRecipientOverride = Operator, // report goes to the operator
                 ConfigJson = "{\"scopeJql\":\"project = \\\"Venture - Catfish Main Development\\\"\",\"lookbackDays\":2,\"maxIssues\":40}"

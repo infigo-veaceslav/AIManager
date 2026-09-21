@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
         {
             e.Property(x => x.Name).IsRequired().HasMaxLength(200);
             e.Property(x => x.Timezone).IsRequired().HasMaxLength(100);
+            e.Property(x => x.WorkingDays).IsRequired().HasMaxLength(50).HasDefaultValue("1,2,3,4");
         });
 
         b.Entity<TeamMember>(e =>

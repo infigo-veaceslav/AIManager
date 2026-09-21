@@ -180,6 +180,14 @@ public class JiraService : IJiraService
         return keys;
     }
 
+    private const int MaxAttempts = 4;
+    private static readonly TimeSpan MaxDelay = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// GETs and parses JSON, with retry on 429/5xx honoring Retry-After. Returns null for a
+    /// non-transient "no data" response (e.g. 4xx). Throws <see cref="JiraUnavailableException"/>
+    /// when throttling/failures persist past <see cref="MaxAttempts"/> so callers can fail safe.
+    /// </summary>
     private async Task<JsonDocument?> GetJsonAsync(string relativeUrl, CancellationToken ct)
     {
         var jira = (await _settings.GetEffectiveAsync(ct)).Jira;
@@ -189,33 +197,97 @@ public class JiraService : IJiraService
             return null;
         }
 
-        try
-        {
-            var baseUri = new Uri(jira.Url.TrimEnd('/') + "/");
-            using var req = new HttpRequestMessage(HttpMethod.Get, new Uri(baseUri, relativeUrl));
-            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            if (!string.IsNullOrWhiteSpace(jira.User))
-            {
-                var token = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{jira.User}:{jira.ApiToken}"));
-                req.Headers.Authorization = new AuthenticationHeaderValue("Basic", token);
-            }
+        var baseUri = new Uri(jira.Url.TrimEnd('/') + "/");
+        string? auth = string.IsNullOrWhiteSpace(jira.User)
+            ? null
+            : Convert.ToBase64String(Encoding.UTF8.GetBytes($"{jira.User}:{jira.ApiToken}"));
 
-            using var resp = await _http.SendAsync(req, ct);
-            if (!resp.IsSuccessStatusCode)
+        for (var attempt = 1; ; attempt++)
+        {
+            try
             {
-                var reason = await resp.Content.ReadAsStringAsync(ct);
-                _log.LogWarning("Jira GET {Url} -> {Status}: {Body}", relativeUrl, (int)resp.StatusCode, Truncate(reason, 500));
+                using var req = new HttpRequestMessage(HttpMethod.Get, new Uri(baseUri, relativeUrl));
+                req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                if (auth is not null)
+                    req.Headers.Authorization = new AuthenticationHeaderValue("Basic", auth);
+
+                var resp = await _http.SendAsync(req, ct);
+                var status = (int)resp.StatusCode;
+
+                if (resp.IsSuccessStatusCode)
+                {
+                    await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+                    var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+                    resp.Dispose();
+                    return doc;
+                }
+
+                var transient = status == 429 || status is >= 500 and <= 599;
+                if (transient && attempt < MaxAttempts)
+                {
+                    var delay = ComputeDelay(resp, attempt);
+                    resp.Dispose();
+                    _log.LogWarning("Jira GET {Url} -> {Status}; retry {Attempt}/{Max} in {Delay:0.#}s.",
+                        relativeUrl, status, attempt, MaxAttempts, delay.TotalSeconds);
+                    await Task.Delay(delay, ct);
+                    continue;
+                }
+
+                var body = await resp.Content.ReadAsStringAsync(ct);
+                resp.Dispose();
+
+                if (transient)
+                {
+                    _log.LogError("Jira GET {Url} still {Status} after {Max} attempts — treating as unavailable.",
+                        relativeUrl, status, MaxAttempts);
+                    throw new JiraUnavailableException($"Jira returned {status} for '{relativeUrl}' after {MaxAttempts} attempts.");
+                }
+
+                // Non-transient (e.g. 400/401/404): genuine "no data", handled gracefully by callers.
+                _log.LogWarning("Jira GET {Url} -> {Status}: {Body}", relativeUrl, status, Truncate(body, 500));
                 return null;
             }
-            var stream = await resp.Content.ReadAsStreamAsync(ct);
-            return await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-        }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "Jira GET {Url} failed", relativeUrl);
-            return null;
+            catch (JiraUnavailableException) { throw; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) when (attempt < MaxAttempts)
+            {
+                var delay = Backoff(attempt);
+                _log.LogWarning(ex, "Jira GET {Url} network error (attempt {Attempt}/{Max}); retry in {Delay:0.#}s.",
+                    relativeUrl, attempt, MaxAttempts, delay.TotalSeconds);
+                await Task.Delay(delay, ct);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Jira GET {Url} failed after {Max} attempts.", relativeUrl, MaxAttempts);
+                throw new JiraUnavailableException($"Jira request to '{relativeUrl}' failed after {MaxAttempts} attempts.", ex);
+            }
         }
     }
+
+    /// <summary>Delay for a transient response: honor Retry-After, else exponential backoff with jitter.</summary>
+    private static TimeSpan ComputeDelay(HttpResponseMessage resp, int attempt)
+    {
+        var ra = resp.Headers.RetryAfter;
+        if (ra is not null)
+        {
+            if (ra.Delta is { } delta && delta > TimeSpan.Zero) return Cap(delta);
+            if (ra.Date is { } date)
+            {
+                var wait = date - DateTimeOffset.UtcNow;
+                if (wait > TimeSpan.Zero) return Cap(wait);
+            }
+        }
+        return Backoff(attempt);
+    }
+
+    private static TimeSpan Backoff(int attempt)
+    {
+        var seconds = Math.Pow(2, attempt - 1); // 1, 2, 4, …
+        var jitter = TimeSpan.FromMilliseconds(Random.Shared.Next(0, 500));
+        return Cap(TimeSpan.FromSeconds(seconds) + jitter);
+    }
+
+    private static TimeSpan Cap(TimeSpan t) => t > MaxDelay ? MaxDelay : t;
 
     private static bool TryParseJiraDate(string value, out DateTimeOffset result) =>
         DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
