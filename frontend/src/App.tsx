@@ -58,6 +58,13 @@ export default function App() {
   )
 }
 
+// Format an ISO/UTC timestamp in the browser's local timezone as "YYYY-MM-DD HH:mm".
+function fmt(iso: string) {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 function useAsync<T>(loader: () => Promise<T>, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -102,7 +109,7 @@ function CompliancePanel() {
           <p className="muted">
             {data.teamName} · {data.targetDate} · threshold {data.threshold}h ·{' '}
             {data.lastSyncedAt
-              ? `synced ${new Date(data.lastSyncedAt).toLocaleString()}`
+              ? `synced ${fmt(data.lastSyncedAt)}`
               : 'never synced — click Resync to load'}{' '}
             · showing all members ({data.rows.filter((r) => r.active).length} in chase scope)
           </p>
@@ -176,13 +183,14 @@ function HistoryPanel() {
       {error && <p className="error">{error}</p>}
       <table>
         <thead>
-          <tr><th>When (UTC)</th><th>Type</th><th>Target</th><th>Who</th><th>Reason</th><th>Outcome</th><th>Delivered to</th></tr>
+          <tr><th>When</th><th>Type</th><th>Trigger</th><th>Target</th><th>Who</th><th>Reason</th><th>Outcome</th><th>Delivered to</th></tr>
         </thead>
         <tbody>
           {(data ?? []).map((e) => (
             <tr key={e.id}>
-              <td>{new Date(e.createdAtUtc).toISOString().replace('T', ' ').slice(0, 16)}</td>
+              <td>{fmt(e.createdAtUtc)}</td>
               <td>{e.type}</td>
+              <td><span className={e.trigger === 'Manual' ? 'info' : 'muted'}>{e.trigger}</span></td>
               <td>{e.targetDate}</td>
               <td>{e.memberName ?? '—'}</td>
               <td>{e.reason}</td>
@@ -190,7 +198,7 @@ function HistoryPanel() {
               <td>{e.deliveredTo ?? '—'}</td>
             </tr>
           ))}
-          {data && data.length === 0 && <tr><td colSpan={7} className="muted">No chase events yet.</td></tr>}
+          {data && data.length === 0 && <tr><td colSpan={8} className="muted">No chase events yet.</td></tr>}
         </tbody>
       </table>
     </section>

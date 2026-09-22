@@ -49,11 +49,11 @@ public class TimeLogChaserJob
             .ToListAsync(ct);
 
         foreach (var id in ruleIds)
-            await RunRuleAsync(id, ct);
+            await RunRuleAsync(id, false, ct);
     }
 
-    /// <summary>Run a single TimeLog rule (also used by the "run now" endpoint).</summary>
-    public async Task RunRuleAsync(int ruleId, CancellationToken ct = default)
+    /// <summary>Run a single TimeLog rule (also used by the "run now" endpoint). manual = fired by Run-now.</summary>
+    public async Task RunRuleAsync(int ruleId, bool manual, CancellationToken ct = default)
     {
         var rule = await _db.ChaseRules
             .Include(r => r.Team!).ThenInclude(t => t.Members)
@@ -66,6 +66,7 @@ public class TimeLogChaserJob
             return;
         }
 
+        var trigger = manual ? ChaseTrigger.Manual : ChaseTrigger.Scheduled;
         var tz = rule.Team.Timezone;
         var date = WorkingDays.PreviousWorkingDay(tz, rule.Team.WorkingDays, DateTimeOffset.UtcNow);
         var threshold = rule.ThresholdHours ?? 5.0;
@@ -90,6 +91,7 @@ public class TimeLogChaserJob
                 Reason = "Skipped: Jira throttled/unavailable — no reminders sent",
                 DetailJson = JsonSerializer.Serialize(new { error = ex.Message }),
                 Outcome = ChaseOutcome.Skipped,
+                Trigger = trigger,
                 CreatedAtUtc = DateTime.UtcNow
             });
             await _db.SaveChangesAsync(ct);
@@ -153,6 +155,7 @@ public class TimeLogChaserJob
                     Reason = $"Logged {hours:0.##}h (< {threshold:0.##}h) on {date:yyyy-MM-dd}",
                     DetailJson = JsonSerializer.Serialize(new { hours, threshold, isTest = recipient != member.Email }),
                     Outcome = sent ? ChaseOutcome.Sent : ChaseOutcome.Failed,
+                    Trigger = trigger,
                     MessageText = message,
                     DeliveredTo = recipient,
                     CreatedAtUtc = DateTime.UtcNow
@@ -180,6 +183,7 @@ public class TimeLogChaserJob
                     Reason = $"Team summary: {under.Count} under {threshold:0.##}h on {date:yyyy-MM-dd}",
                     DetailJson = JsonSerializer.Serialize(new { count = under.Count, channel = rule.DestinationChannel.Name }),
                     Outcome = sent ? ChaseOutcome.Sent : ChaseOutcome.Failed,
+                    Trigger = trigger,
                     MessageText = summary,
                     DeliveredTo = $"#{rule.DestinationChannel.Name}",
                     CreatedAtUtc = DateTime.UtcNow

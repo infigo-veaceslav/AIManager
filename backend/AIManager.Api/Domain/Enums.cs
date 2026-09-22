@@ -31,6 +31,14 @@ public enum ChaseOutcome
     Skipped = 2
 }
 
+/// <summary>How a run was triggered. Unknown = pre-dating this field.</summary>
+public enum ChaseTrigger
+{
+    Unknown = 0,
+    Scheduled = 1,
+    Manual = 2
+}
+
 /// <summary>Where a message is delivered via the unified Power Automate flow.</summary>
 public enum TeamsTargetType
 {

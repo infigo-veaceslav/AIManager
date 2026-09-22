@@ -48,10 +48,10 @@ public class SupportDigestJob
             .Where(r => r.Enabled && r.Type == ChaseRuleType.SupportDigest)
             .Select(r => r.Id).ToListAsync(ct);
         foreach (var id in ruleIds)
-            await RunRuleAsync(id, ct);
+            await RunRuleAsync(id, false, ct);
     }
 
-    public async Task RunRuleAsync(int ruleId, CancellationToken ct = default)
+    public async Task RunRuleAsync(int ruleId, bool manual, CancellationToken ct = default)
     {
         var rule = await _db.ChaseRules.Include(r => r.Team).Include(r => r.DestinationChannel)
             .FirstOrDefaultAsync(r => r.Id == ruleId, ct);
@@ -66,6 +66,7 @@ public class SupportDigestJob
             return;
         }
 
+        var trigger = manual ? ChaseTrigger.Manual : ChaseTrigger.Scheduled;
         var cfg = ParseConfig(rule.ConfigJson);
         var date = WorkingDays.TodayIn(rule.Team.Timezone, DateTimeOffset.UtcNow);
         var statuses = cfg.AssigneeStatuses.Concat(cfg.ReporterStatuses).Distinct().ToArray();
@@ -84,7 +85,7 @@ public class SupportDigestJob
                 RuleId = rule.Id, MemberId = null, TargetDate = date,
                 Reason = "Skipped: Jira throttled/unavailable — digest not posted",
                 DetailJson = JsonSerializer.Serialize(new { error = ex.Message }),
-                Outcome = ChaseOutcome.Skipped, CreatedAtUtc = DateTime.UtcNow
+                Outcome = ChaseOutcome.Skipped, Trigger = trigger, CreatedAtUtc = DateTime.UtcNow
             });
             await _db.SaveChangesAsync(ct);
             return;
@@ -107,6 +108,7 @@ public class SupportDigestJob
             Reason = $"Support digest: {ticketCount} ticket(s) across {groupCount} people",
             DetailJson = JsonSerializer.Serialize(new { tickets = ticketCount, people = groupCount, project = cfg.ProjectKey }),
             Outcome = sent ? ChaseOutcome.Sent : ChaseOutcome.Failed,
+            Trigger = trigger,
             MessageText = message,
             DeliveredTo = $"#{channel.Name}",
             CreatedAtUtc = DateTime.UtcNow

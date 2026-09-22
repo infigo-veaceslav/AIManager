@@ -12,7 +12,7 @@ public class ChaseEventsController : ControllerBase
     public ChaseEventsController(AppDbContext db) => _db = db;
 
     public record ChaseEventDto(int Id, int RuleId, string Type, int? MemberId, string? MemberName,
-        DateOnly TargetDate, string Reason, string Outcome, string? DeliveredTo, string? MessageText,
+        DateOnly TargetDate, string Reason, string Outcome, string Trigger, string? DeliveredTo, string? MessageText,
         string? DetailJson, DateTime CreatedAtUtc);
 
     [HttpGet]
@@ -30,7 +30,7 @@ public class ChaseEventsController : ControllerBase
             .Take(Math.Clamp(take, 1, 1000))
             .Select(e => new ChaseEventDto(e.Id, e.RuleId, e.Rule!.Type.ToString(), e.MemberId,
                 e.Member != null ? e.Member.DisplayName : null,
-                e.TargetDate, e.Reason, e.Outcome.ToString(), e.DeliveredTo, e.MessageText,
+                e.TargetDate, e.Reason, e.Outcome.ToString(), e.Trigger.ToString(), e.DeliveredTo, e.MessageText,
                 e.DetailJson, e.CreatedAtUtc))
             .ToListAsync();
     }

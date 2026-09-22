@@ -76,9 +76,9 @@ public class RulesController : ControllerBase
 
         var jobId = rule.Type switch
         {
-            ChaseRuleType.TimeLog => _jobs.Enqueue<TimeLogChaserJob>(j => j.RunRuleAsync(id, CancellationToken.None)),
-            ChaseRuleType.TaskUpdate => _jobs.Enqueue<TaskUpdateTrackerJob>(j => j.RunRuleAsync(id, CancellationToken.None)),
-            ChaseRuleType.SupportDigest => _jobs.Enqueue<SupportDigestJob>(j => j.RunRuleAsync(id, CancellationToken.None)),
+            ChaseRuleType.TimeLog => _jobs.Enqueue<TimeLogChaserJob>(j => j.RunRuleAsync(id, true, CancellationToken.None)),
+            ChaseRuleType.TaskUpdate => _jobs.Enqueue<TaskUpdateTrackerJob>(j => j.RunRuleAsync(id, true, CancellationToken.None)),
+            ChaseRuleType.SupportDigest => _jobs.Enqueue<SupportDigestJob>(j => j.RunRuleAsync(id, true, CancellationToken.None)),
             _ => null
         };
         return Accepted(new { jobId });

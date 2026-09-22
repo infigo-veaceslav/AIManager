@@ -46,10 +46,10 @@ public class TaskUpdateTrackerJob
             .ToListAsync(ct);
 
         foreach (var id in ruleIds)
-            await RunRuleAsync(id, ct);
+            await RunRuleAsync(id, false, ct);
     }
 
-    public async Task RunRuleAsync(int ruleId, CancellationToken ct = default)
+    public async Task RunRuleAsync(int ruleId, bool manual, CancellationToken ct = default)
     {
         var rule = await _db.ChaseRules.Include(r => r.Team).Include(r => r.DestinationChannel)
             .FirstOrDefaultAsync(r => r.Id == ruleId, ct);
@@ -59,6 +59,7 @@ public class TaskUpdateTrackerJob
             return;
         }
 
+        var trigger = manual ? ChaseTrigger.Manual : ChaseTrigger.Scheduled;
         var cfg = ParseConfig(rule.ConfigJson);
         var tz = rule.Team.Timezone;
         var date = WorkingDays.PreviousWorkingDay(tz, rule.Team.WorkingDays, DateTimeOffset.UtcNow);
@@ -71,7 +72,7 @@ public class TaskUpdateTrackerJob
         }
         catch (JiraUnavailableException ex)
         {
-            await RecordSkipAsync(rule, date, ex, ct);
+            await RecordSkipAsync(rule, date, ex, trigger, ct);
             return;
         }
 
@@ -99,7 +100,7 @@ public class TaskUpdateTrackerJob
             }
             catch (JiraUnavailableException ex)
             {
-                await RecordSkipAsync(rule, date, ex, ct);
+                await RecordSkipAsync(rule, date, ex, trigger, ct);
                 return;
             }
             var j = await _judge.JudgeAsync(issue.Key, issue.Summary, comments, ct);
@@ -166,6 +167,7 @@ public class TaskUpdateTrackerJob
                 truncated
             }),
             Outcome = outcome,
+            Trigger = trigger,
             MessageText = report,
             DeliveredTo = deliveredTo,
             CreatedAtUtc = DateTime.UtcNow
@@ -173,7 +175,7 @@ public class TaskUpdateTrackerJob
         await _db.SaveChangesAsync(ct);
     }
 
-    private async Task RecordSkipAsync(ChaseRule rule, DateOnly date, Exception ex, CancellationToken ct)
+    private async Task RecordSkipAsync(ChaseRule rule, DateOnly date, Exception ex, ChaseTrigger trigger, CancellationToken ct)
     {
         _log.LogError(ex, "TaskUpdate rule {RuleId}: Jira unavailable; skipping run (report not generated).", rule.Id);
         _db.ChaseEvents.Add(new ChaseEvent
@@ -184,6 +186,7 @@ public class TaskUpdateTrackerJob
             Reason = "Skipped: Jira throttled/unavailable — report not generated",
             DetailJson = JsonSerializer.Serialize(new { error = ex.Message }),
             Outcome = ChaseOutcome.Skipped,
+            Trigger = trigger,
             CreatedAtUtc = DateTime.UtcNow
         });
         await _db.SaveChangesAsync(ct);

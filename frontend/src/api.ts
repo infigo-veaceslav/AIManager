@@ -58,6 +58,7 @@ export interface ChaseEvent {
   targetDate: string
   reason: string
   outcome: 'Sent' | 'Failed' | 'Skipped'
+  trigger: string
   deliveredTo: string | null
   messageText: string | null
   detailJson: string | null

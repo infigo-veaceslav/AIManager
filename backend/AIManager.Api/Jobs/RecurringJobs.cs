@@ -32,13 +32,13 @@ public static class RecurringJobs
             switch (rule.Type)
             {
                 case ChaseRuleType.TimeLog:
-                    manager.AddOrUpdate<TimeLogChaserJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), cron, options);
+                    manager.AddOrUpdate<TimeLogChaserJob>(jobId, j => j.RunRuleAsync(rule.Id, false, CancellationToken.None), cron, options);
                     break;
                 case ChaseRuleType.TaskUpdate:
-                    manager.AddOrUpdate<TaskUpdateTrackerJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), cron, options);
+                    manager.AddOrUpdate<TaskUpdateTrackerJob>(jobId, j => j.RunRuleAsync(rule.Id, false, CancellationToken.None), cron, options);
                     break;
                 case ChaseRuleType.SupportDigest:
-                    manager.AddOrUpdate<SupportDigestJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), cron, options);
+                    manager.AddOrUpdate<SupportDigestJob>(jobId, j => j.RunRuleAsync(rule.Id, false, CancellationToken.None), cron, options);
                     break;
             }
         }

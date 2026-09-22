@@ -21,6 +21,9 @@ public class ChaseEvent
 
     public ChaseOutcome Outcome { get; set; }
 
+    /// <summary>Whether the run was fired by the schedule or the Run-now button.</summary>
+    public ChaseTrigger Trigger { get; set; }
+
     /// <summary>The exact message body sent (or that would have been sent).</summary>
     public string? MessageText { get; set; }
 
