@@ -140,7 +140,7 @@ public class JiraService : IJiraService
         do
         {
             var url = $"rest/api/3/search/jql?jql={Uri.EscapeDataString(jql)}&maxResults=100" +
-                      "&fields=summary,status,assignee,reporter" +
+                      "&fields=summary,status,assignee,reporter,duedate" +
                       (pageToken is null ? "" : $"&nextPageToken={Uri.EscapeDataString(pageToken)}");
 
             using var doc = await GetJsonAsync(url, ct);
@@ -157,7 +157,10 @@ public class JiraService : IJiraService
                         ? sn.GetString() ?? "" : "";
                     var (assigneeName, assigneeEmail) = ReadUser(fields, "assignee");
                     var (reporterName, reporterEmail) = ReadUser(fields, "reporter");
-                    issues.Add(new SupportIssue(key, summary, status, assigneeName, assigneeEmail, reporterName, reporterEmail));
+                    DateOnly? dueDate = fields.TryGetProperty("duedate", out var due) && due.ValueKind == JsonValueKind.String
+                        && DateOnly.TryParse(due.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var dv)
+                        ? dv : null;
+                    issues.Add(new SupportIssue(key, summary, status, assigneeName, assigneeEmail, reporterName, reporterEmail, dueDate));
                 }
             }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 import {
   api,
@@ -212,7 +212,19 @@ function UserMultiSelect({ label, users, selected, onChange, disabled }: {
   onChange: (emails: string[]) => void
   disabled?: boolean
 }) {
+  const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
+  }, [open])
+
   const sel = new Set(selected.map((e) => e.toLowerCase()))
   const active = users.filter((u) => u.active)
   const filtered = q ? active.filter((u) => `${u.displayName} ${u.email}`.toLowerCase().includes(q.toLowerCase())) : active
@@ -220,25 +232,37 @@ function UserMultiSelect({ label, users, selected, onChange, disabled }: {
     const e = email.toLowerCase()
     onChange(sel.has(e) ? selected.filter((x) => x.toLowerCase() !== e) : [...selected, email])
   }
+  const summary = selected.length === 0
+    ? 'All'
+    : selected.length <= 2 ? selected.join(', ') : `${selected.length} selected`
+
   return (
-    <details className="multiselect">
-      <summary>{label}: {selected.length ? `${selected.length} selected` : 'all'}</summary>
-      <div className="ms-panel">
-        <input className="ms-search" placeholder="search…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <div className="ms-list">
-          {filtered.map((u) => (
-            <label key={u.id} className="ms-item">
-              <input type="checkbox" checked={sel.has(u.email.toLowerCase())} disabled={disabled} onChange={() => toggle(u.email)} />
-              <span>{u.displayName} <span className="muted">{u.email}</span></span>
-            </label>
-          ))}
-          {active.length === 0 && <p className="muted">No users yet — add some in the Users tab.</p>}
+    <div className="ms" ref={ref}>
+      <span className="ms-label">{label}</span>
+      <button type="button" className="ms-trigger" disabled={disabled} onClick={() => setOpen((o) => !o)}>
+        <span className="ms-summary">{summary}</span>
+        <span className="ms-caret">▾</span>
+      </button>
+      {open && (
+        <div className="ms-panel">
+          <input className="ms-search" autoFocus placeholder="Search users…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="ms-list">
+            {filtered.map((u) => (
+              <label key={u.id} className="ms-item">
+                <input type="checkbox" checked={sel.has(u.email.toLowerCase())} onChange={() => toggle(u.email)} />
+                <span className="ms-name">{u.displayName}</span>
+                <span className="ms-email muted">{u.email}</span>
+              </label>
+            ))}
+            {filtered.length === 0 && <p className="muted ms-empty">{active.length === 0 ? 'No users — add some in the Users tab.' : 'No matches.'}</p>}
+          </div>
+          <div className="ms-actions">
+            <button type="button" className="link-btn" onClick={() => onChange([])}>Clear</button>
+            <button type="button" className="ms-done" onClick={() => setOpen(false)}>Done</button>
+          </div>
         </div>
-        {selected.length > 0 && (
-          <button type="button" className="link-btn" disabled={disabled} onClick={() => onChange([])}>Clear</button>
-        )}
-      </div>
-    </details>
+      )}
+    </div>
   )
 }
 

@@ -91,7 +91,7 @@ public class SupportDigestJob
             return;
         }
 
-        var (message, people, groupCount, ticketCount) = BuildDigest(issues, cfg);
+        var (message, people, groupCount, ticketCount) = BuildDigest(issues, cfg, date);
 
         bool sent;
         var channel = rule.DestinationChannel;
@@ -116,7 +116,7 @@ public class SupportDigestJob
         await _db.SaveChangesAsync(ct);
     }
 
-    private static (string message, List<MentionTarget> people, int groupCount, int ticketCount) BuildDigest(List<SupportIssue> issues, DigestConfig cfg)
+    private static (string message, List<MentionTarget> people, int groupCount, int ticketCount) BuildDigest(List<SupportIssue> issues, DigestConfig cfg, DateOnly today)
     {
         var reporterStatuses = new HashSet<string>(cfg.ReporterStatuses, StringComparer.OrdinalIgnoreCase);
         var reporterFilter = new HashSet<string>(cfg.ReporterFilter, StringComparer.OrdinalIgnoreCase);
@@ -186,10 +186,11 @@ public class SupportDigestJob
                 sb.Append($"<b>{WebUtility.HtmlEncode(display)}</b> — {list.Count} ticket(s)<br>");
             }
 
-            var shown = cfg.MaxPerPerson > 0 ? list.Take(cfg.MaxPerPerson).ToList() : list;
+            // Soonest due date first; tickets without a due date go last.
+            var ordered = list.OrderBy(i => i.DueDate ?? DateOnly.MaxValue).ToList();
+            var shown = cfg.MaxPerPerson > 0 ? ordered.Take(cfg.MaxPerPerson).ToList() : ordered;
             foreach (var it in shown)
-                sb.Append($"• <a href=\"{BrowseBase}{it.Key}\">{it.Key}</a> — " +
-                          $"{WebUtility.HtmlEncode(it.Summary)} <i>({WebUtility.HtmlEncode(it.Status)})</i><br>");
+                sb.Append(RenderTicketLine(it, today));
 
             if (cfg.MaxPerPerson > 0 && list.Count > cfg.MaxPerPerson)
                 sb.Append($"…and {list.Count - cfg.MaxPerPerson} more<br>");
@@ -199,6 +200,26 @@ public class SupportDigestJob
         }
 
         return (sb.ToString(), people, groups.Count, ticketCount);
+    }
+
+    private static string RenderTicketLine(SupportIssue it, DateOnly today)
+    {
+        var link = $"<a href=\"{BrowseBase}{it.Key}\">{it.Key}</a>";
+        var urgent = it.DueDate is { } d && d <= today.AddDays(30); // due within a month (or overdue)
+
+        string duePart;
+        if (it.DueDate is { } due)
+        {
+            var text = $"due {due:yyyy-MM-dd}";
+            duePart = urgent ? $"<b><span style=\"color:#D32F2F\">{text}</span></b>" : text; // only the date turns red
+        }
+        else
+        {
+            duePart = "no due date";
+        }
+
+        var bullet = urgent ? "• 🔴" : "•"; // keep the 🔴 marker for urgent tickets
+        return $"{bullet} {link} — {WebUtility.HtmlEncode(it.Summary)} <i>({WebUtility.HtmlEncode(it.Status)})</i> — {duePart}<br>";
     }
 
     private static DigestConfig ParseConfig(string? json)

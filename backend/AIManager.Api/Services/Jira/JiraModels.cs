@@ -20,6 +20,7 @@ public record SupportIssue(
     string? AssigneeName,
     string? AssigneeEmail,
     string? ReporterName,
-    string? ReporterEmail);
+    string? ReporterEmail,
+    DateOnly? DueDate);
 
 public record JiraPerson(string? AccountId, string DisplayName, string Email);
