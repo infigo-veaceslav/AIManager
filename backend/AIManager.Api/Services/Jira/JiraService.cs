@@ -176,6 +176,67 @@ public class JiraService : IJiraService
         return issues;
     }
 
+    private const int PeopleMaxPages = 10; // ~1000 recent issues per source
+
+    public async Task<List<JiraPerson>> GetPeopleAsync(
+        IReadOnlyCollection<string> projectKeys, IReadOnlyCollection<string> boardIds, CancellationToken ct = default)
+    {
+        var byKey = new Dictionary<string, JiraPerson>(StringComparer.OrdinalIgnoreCase);
+
+        void Collect(JsonElement issue)
+        {
+            if (!issue.TryGetProperty("fields", out var fields)) return;
+            foreach (var prop in new[] { "assignee", "reporter" })
+            {
+                if (!fields.TryGetProperty(prop, out var u) || u.ValueKind != JsonValueKind.Object) continue;
+                var email = u.TryGetProperty("emailAddress", out var em) ? em.GetString() : null;
+                if (string.IsNullOrEmpty(email)) continue;
+                var accountId = u.TryGetProperty("accountId", out var a) ? a.GetString() : null;
+                var name = u.TryGetProperty("displayName", out var dn) ? dn.GetString() : email;
+                byKey.TryAdd(accountId ?? email, new JiraPerson(accountId, name ?? email, email));
+            }
+        }
+
+        // Projects — recent issues via the enhanced search endpoint.
+        foreach (var project in projectKeys)
+        {
+            var jql = $"project = {project} ORDER BY updated DESC";
+            string? pageToken = null;
+            var pages = 0;
+            do
+            {
+                var url = $"rest/api/3/search/jql?jql={Uri.EscapeDataString(jql)}&maxResults=100&fields=assignee,reporter" +
+                          (pageToken is null ? "" : $"&nextPageToken={Uri.EscapeDataString(pageToken)}");
+                using var doc = await GetJsonAsync(url, ct);
+                if (doc is null) break;
+                if (doc.RootElement.TryGetProperty("issues", out var arr))
+                    foreach (var issue in arr.EnumerateArray()) Collect(issue);
+                pageToken = doc.RootElement.TryGetProperty("nextPageToken", out var nt) ? nt.GetString() : null;
+            } while (!string.IsNullOrEmpty(pageToken) && ++pages < PeopleMaxPages);
+        }
+
+        // Boards — agile API (startAt/total paging).
+        foreach (var boardId in boardIds)
+        {
+            var startAt = 0;
+            var pages = 0;
+            while (pages++ < PeopleMaxPages)
+            {
+                var url = $"rest/agile/1.0/board/{Uri.EscapeDataString(boardId)}/issue?fields=assignee,reporter&maxResults=100&startAt={startAt}";
+                using var doc = await GetJsonAsync(url, ct);
+                if (doc is null || !doc.RootElement.TryGetProperty("issues", out var arr)) break;
+
+                var count = 0;
+                foreach (var issue in arr.EnumerateArray()) { Collect(issue); count++; }
+                var total = doc.RootElement.TryGetProperty("total", out var t) ? t.GetInt32() : 0;
+                startAt += 100;
+                if (count == 0 || startAt >= total) break;
+            }
+        }
+
+        return byKey.Values.OrderBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
     private static (string? Name, string? Email) ReadUser(JsonElement fields, string property)
     {
         if (fields.TryGetProperty(property, out var u) && u.ValueKind == JsonValueKind.Object)

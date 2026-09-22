@@ -31,4 +31,11 @@ public interface IJiraService
     Task<List<SupportIssue>> GetSupportIssuesAsync(
         string projectKey, IReadOnlyCollection<string> statuses, IReadOnlyCollection<string> reporterEmails,
         int maxIssues, CancellationToken ct = default);
+
+    /// <summary>
+    /// Distinct people (assignees + reporters, with email) appearing on recent issues of the given
+    /// projects and agile boards. Used to populate the Users directory.
+    /// </summary>
+    Task<List<JiraPerson>> GetPeopleAsync(
+        IReadOnlyCollection<string> projectKeys, IReadOnlyCollection<string> boardIds, CancellationToken ct = default);
 }

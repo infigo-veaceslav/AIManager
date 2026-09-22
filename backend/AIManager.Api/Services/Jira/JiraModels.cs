@@ -21,3 +21,5 @@ public record SupportIssue(
     string? AssigneeEmail,
     string? ReporterName,
     string? ReporterEmail);
+
+public record JiraPerson(string? AccountId, string DisplayName, string Email);

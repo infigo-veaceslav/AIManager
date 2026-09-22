@@ -40,6 +40,15 @@ export interface Channel {
   channelId: string
 }
 
+export interface User {
+  id: number
+  displayName: string
+  email: string
+  jiraAccountId: string | null
+  active: boolean
+  source: string
+}
+
 export interface ChaseEvent {
   id: number
   ruleId: number
@@ -146,4 +155,16 @@ export const api = {
   createChannel: (body: { name: string; teamId: string; channelId: string }) =>
     http<Channel>('/api/channels', { method: 'POST', body: JSON.stringify(body) }),
   deleteChannel: (id: number) => http<void>(`/api/channels/${id}`, { method: 'DELETE' }),
+  getUsers: () => http<User[]>('/api/users'),
+  createUser: (body: { displayName: string; email: string }) =>
+    http<User>('/api/users', { method: 'POST', body: JSON.stringify(body) }),
+  updateUser: (id: number, body: { displayName?: string; active?: boolean }) =>
+    http<void>(`/api/users/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteUser: (id: number) => http<void>(`/api/users/${id}`, { method: 'DELETE' }),
+  getUserSyncConfig: () => http<{ projectKeys: string; boardIds: string }>('/api/users/sync-config'),
+  putUserSyncConfig: (body: { projectKeys: string; boardIds: string }) =>
+    http<void>('/api/users/sync-config', { method: 'PUT', body: JSON.stringify(body) }),
+  syncUsers: () => http<{ added: number; updated: number; total: number }>('/api/users/sync', { method: 'POST' }),
+  importRoster: () =>
+    http<{ added: number; updated: number; total: number }>('/api/users/import-roster', { method: 'POST' }),
 }

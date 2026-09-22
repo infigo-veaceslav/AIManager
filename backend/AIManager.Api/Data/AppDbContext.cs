@@ -15,6 +15,7 @@ public class AppDbContext : DbContext
     public DbSet<AppSettings> AppSettings => Set<AppSettings>();
     public DbSet<TeamsChannel> TeamsChannels => Set<TeamsChannel>();
     public DbSet<ComplianceSnapshot> ComplianceSnapshots => Set<ComplianceSnapshot>();
+    public DbSet<User> Users => Set<User>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -57,6 +58,21 @@ public class AppDbContext : DbContext
         b.Entity<ComplianceSnapshot>(e =>
         {
             e.HasIndex(x => new { x.TeamId, x.TargetDate, x.MemberId }).IsUnique();
+        });
+
+        b.Entity<User>(e =>
+        {
+            e.Property(x => x.DisplayName).IsRequired().HasMaxLength(200);
+            e.Property(x => x.Email).IsRequired().HasMaxLength(320);
+            e.Property(x => x.JiraAccountId).HasMaxLength(128);
+            e.Property(x => x.Source).IsRequired().HasMaxLength(20);
+            e.HasIndex(x => x.Email).IsUnique();
+        });
+
+        b.Entity<AppSettings>(e =>
+        {
+            e.Property(x => x.UserSyncProjectKeys).HasMaxLength(500);
+            e.Property(x => x.UserSyncBoardIds).HasMaxLength(500);
         });
 
         b.Entity<ChaseEvent>(e =>

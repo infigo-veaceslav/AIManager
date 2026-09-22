@@ -57,6 +57,28 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
   background: transparent !important; color: var(--muted) !important;
   border: 1px solid var(--border) !important; align-self: flex-end; font-size: 12px !important;
 }
+
+.multiselect { position: relative; display: flex; flex-direction: column; }
+.multiselect > summary {
+  cursor: pointer; list-style: none; min-width: 220px; font-size: 13px; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px;
+}
+.multiselect > summary::-webkit-details-marker { display: none; }
+.ms-panel {
+  position: absolute; top: 100%; left: 0; z-index: 20; margin-top: 4px; width: 320px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.ms-search {
+  width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 6px 8px; font-size: 13px; margin-bottom: 6px;
+}
+.ms-list { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.ms-item {
+  display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 4px;
+  cursor: pointer; color: var(--text); font-size: 13px;
+}
+.ms-item:hover { background: var(--bg); }
 section > button {
   background: var(--accent); color: #fff; border: none; border-radius: 6px;
   padding: 8px 16px; cursor: pointer; font-size: 14px;

@@ -20,5 +20,11 @@ public class AppSettings
     public string? AnthropicModel { get; set; }
     public int? AnthropicMaxTokens { get; set; }
 
+    /// <summary>Comma-separated Jira project keys the Users sync scans (e.g. "SUP,VENTURE").</summary>
+    public string? UserSyncProjectKeys { get; set; }
+
+    /// <summary>Comma-separated Jira agile board ids the Users sync scans (e.g. the DR board).</summary>
+    public string? UserSyncBoardIds { get; set; }
+
     public DateTime? UpdatedAtUtc { get; set; }
 }

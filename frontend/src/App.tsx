@@ -10,9 +10,10 @@ import {
   type SettingsDto,
   type SettingsUpdate,
   type Team,
+  type User,
 } from './api'
 
-type Tab = 'compliance' | 'history' | 'findings' | 'rules' | 'roster' | 'channels' | 'settings'
+type Tab = 'compliance' | 'history' | 'findings' | 'rules' | 'roster' | 'channels' | 'users' | 'settings'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'compliance', label: 'Compliance' },
@@ -21,6 +22,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'rules', label: 'Rules' },
   { key: 'roster', label: 'Roster' },
   { key: 'channels', label: 'Channels' },
+  { key: 'users', label: 'Users' },
   { key: 'settings', label: 'Settings' },
 ]
 
@@ -49,6 +51,7 @@ export default function App() {
         {tab === 'rules' && <RulesPanel />}
         {tab === 'roster' && <RosterPanel />}
         {tab === 'channels' && <ChannelsPanel />}
+        {tab === 'users' && <UsersPanel />}
         {tab === 'settings' && <SettingsPanel />}
       </main>
     </div>
@@ -194,27 +197,139 @@ function HistoryPanel() {
   )
 }
 
-function SupportConfig({ rule, save, busy }: {
+function UserMultiSelect({ label, users, selected, onChange, disabled }: {
+  label: string
+  users: User[]
+  selected: string[]
+  onChange: (emails: string[]) => void
+  disabled?: boolean
+}) {
+  const [q, setQ] = useState('')
+  const sel = new Set(selected.map((e) => e.toLowerCase()))
+  const active = users.filter((u) => u.active)
+  const filtered = q ? active.filter((u) => `${u.displayName} ${u.email}`.toLowerCase().includes(q.toLowerCase())) : active
+  const toggle = (email: string) => {
+    const e = email.toLowerCase()
+    onChange(sel.has(e) ? selected.filter((x) => x.toLowerCase() !== e) : [...selected, email])
+  }
+  return (
+    <details className="multiselect">
+      <summary>{label}: {selected.length ? `${selected.length} selected` : 'all'}</summary>
+      <div className="ms-panel">
+        <input className="ms-search" placeholder="search…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="ms-list">
+          {filtered.map((u) => (
+            <label key={u.id} className="ms-item">
+              <input type="checkbox" checked={sel.has(u.email.toLowerCase())} disabled={disabled} onChange={() => toggle(u.email)} />
+              <span>{u.displayName} <span className="muted">{u.email}</span></span>
+            </label>
+          ))}
+          {active.length === 0 && <p className="muted">No users yet — add some in the Users tab.</p>}
+        </div>
+        {selected.length > 0 && (
+          <button type="button" className="link-btn" disabled={disabled} onClick={() => onChange([])}>Clear</button>
+        )}
+      </div>
+    </details>
+  )
+}
+
+function UsersPanel() {
+  const { data, reload } = useAsync<User[]>(() => api.getUsers())
+  const cfg = useAsync<{ projectKeys: string; boardIds: string }>(() => api.getUserSyncConfig())
+  const [projectKeys, setProjectKeys] = useState('')
+  const [boardIds, setBoardIds] = useState('')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (cfg.data) { setProjectKeys(cfg.data.projectKeys); setBoardIds(cfg.data.boardIds) }
+  }, [cfg.data])
+
+  const saveCfg = async () => { try { await api.putUserSyncConfig({ projectKeys, boardIds }) } catch { /* ignore */ } }
+  const add = async () => {
+    if (!name.trim() || !email.trim()) { setMsg('Name and email are required.'); return }
+    setBusy(true); setMsg(null)
+    try { await api.createUser({ displayName: name.trim(), email: email.trim() }); setName(''); setEmail(''); await reload() }
+    catch (e) { setMsg(String(e)) } finally { setBusy(false) }
+  }
+  const toggle = async (id: number, active: boolean) => { await api.updateUser(id, { active }); await reload() }
+  const remove = async (id: number) => { setBusy(true); try { await api.deleteUser(id); await reload() } finally { setBusy(false) } }
+  const sync = async () => {
+    setBusy(true); setMsg(null)
+    try { await saveCfg(); const r = await api.syncUsers(); setMsg(`Synced from Jira: +${r.added} new, ${r.updated} updated, ${r.total} total.`); await reload() }
+    catch { setMsg('Sync failed — Jira may be throttling/unavailable.') } finally { setBusy(false) }
+  }
+  const importRoster = async () => {
+    setBusy(true); setMsg(null)
+    try { const r = await api.importRoster(); setMsg(`Imported roster: +${r.added} new, ${r.updated} updated, ${r.total} total.`); await reload() }
+    catch (e) { setMsg(String(e)) } finally { setBusy(false) }
+  }
+
+  return (
+    <section>
+      <div className="panel-head"><h2>Users ({data?.length ?? 0})</h2></div>
+      <p className="muted">Master directory of people the platform knows — used to pick reporters/assignees for rules. Independent of the dev Roster.</p>
+      {msg && <p className="info">{msg}</p>}
+
+      <div className="rule-card">
+        <div className="rule-title"><strong>Populate</strong></div>
+        <div className="rule-fields">
+          <label>Sync project keys<input value={projectKeys} onChange={(e) => setProjectKeys(e.target.value)} onBlur={saveCfg} placeholder="SUP,VENTURE" /></label>
+          <label>Sync board ids<input value={boardIds} onChange={(e) => setBoardIds(e.target.value)} onBlur={saveCfg} placeholder="e.g. the DR board id" /></label>
+        </div>
+        <button disabled={busy} onClick={sync}>{busy ? 'Working…' : 'Sync from Jira'}</button>
+        <button className="link-btn" disabled={busy} onClick={importRoster}>Import dev roster</button>
+      </div>
+
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Jira</th><th>Source</th><th>Active</th><th></th></tr></thead>
+        <tbody>
+          {(data ?? []).map((u) => (
+            <tr key={u.id} className={u.active ? '' : 'row-muted'}>
+              <td>{u.displayName}</td>
+              <td>{u.email}</td>
+              <td className="muted">{u.jiraAccountId ? '✓' : '—'}</td>
+              <td className="muted">{u.source}</td>
+              <td><input type="checkbox" checked={u.active} disabled={busy} onChange={(e) => toggle(u.id, e.target.checked)} /></td>
+              <td><button className="link-btn" disabled={busy} onClick={() => remove(u.id)}>Delete</button></td>
+            </tr>
+          ))}
+          {data && data.length === 0 && <tr><td colSpan={6} className="muted">No users yet — Sync from Jira or Import dev roster.</td></tr>}
+        </tbody>
+      </table>
+
+      <div className="rule-card">
+        <div className="rule-title"><strong>Add user</strong></div>
+        <div className="rule-fields">
+          <label>Name<input value={name} onChange={(e) => setName(e.target.value)} /></label>
+          <label>Email<input value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+        </div>
+        <button disabled={busy} onClick={add}>Add user</button>
+      </div>
+    </section>
+  )
+}
+
+function SupportConfig({ rule, save, busy, users }: {
   rule: Rule
   save: (id: number, body: Partial<Rule>) => void
   busy: boolean
+  users: User[]
 }) {
   let cfg: Record<string, unknown> = {}
   try { cfg = rule.configJson ? JSON.parse(rule.configJson) : {} } catch { cfg = {} }
-  const joined = (a: unknown) => (Array.isArray(a) ? a.join(', ') : '')
-  const toList = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean)
+  const emails = (a: unknown) => (Array.isArray(a) ? (a as string[]) : [])
   const patch = (p: Record<string, unknown>) => save(rule.id, { configJson: JSON.stringify({ ...cfg, ...p }) })
 
   return (
     <div className="rule-fields">
-      <label>Reporters to cover (blank = all)
-        <input defaultValue={joined(cfg.reporterFilter)} placeholder="all reporters" disabled={busy}
-          onBlur={(e) => { if (e.target.value.trim() !== joined(cfg.reporterFilter)) patch({ reporterFilter: toList(e.target.value) }) }} />
-      </label>
-      <label>Assignees to cover (blank = all)
-        <input defaultValue={joined(cfg.assigneeFilter)} placeholder="all assignees" disabled={busy}
-          onBlur={(e) => { if (e.target.value.trim() !== joined(cfg.assigneeFilter)) patch({ assigneeFilter: toList(e.target.value) }) }} />
-      </label>
+      <UserMultiSelect label="Reporters to cover" users={users} selected={emails(cfg.reporterFilter)} disabled={busy}
+        onChange={(v) => patch({ reporterFilter: v })} />
+      <UserMultiSelect label="Assignees to cover" users={users} selected={emails(cfg.assigneeFilter)} disabled={busy}
+        onChange={(v) => patch({ assigneeFilter: v })} />
       <label>Max per person (0 = no cap)
         <input type="number" defaultValue={Number(cfg.maxPerPerson ?? 0)} disabled={busy}
           onBlur={(e) => { if (Number(e.target.value) !== Number(cfg.maxPerPerson ?? 0)) patch({ maxPerPerson: Number(e.target.value) }) }} />
@@ -231,6 +346,7 @@ function SupportConfig({ rule, save, busy }: {
 function RulesPanel() {
   const { data, error, reload } = useAsync<Rule[]>(() => api.getRules())
   const channels = useAsync<Channel[]>(() => api.getChannels())
+  const users = useAsync<User[]>(() => api.getUsers())
   const [busy, setBusy] = useState<number | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
 
@@ -289,7 +405,7 @@ function RulesPanel() {
               </select>
             </label>
           </div>
-          {r.type === 'SupportDigest' && <SupportConfig rule={r} save={save} busy={busy === r.id} />}
+          {r.type === 'SupportDigest' && <SupportConfig rule={r} save={save} busy={busy === r.id} users={users.data ?? []} />}
           {r.type === 'TaskUpdate' && (
             <label className="config-editor">Config (JSON)
               <textarea defaultValue={r.configJson ?? ''} rows={7} spellCheck={false}
