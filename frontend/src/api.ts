@@ -86,6 +86,7 @@ export interface ComplianceResult {
   teamName: string
   targetDate: string
   threshold: number
+  lastSyncedAt: string | null
   rows: ComplianceRow[]
 }
 
@@ -136,6 +137,8 @@ export const api = {
     http<Finding[]>(`/api/findings?onlyIncomplete=${onlyIncomplete}`),
   getCompliance: (teamId?: number) =>
     http<ComplianceResult>(`/api/compliance${teamId ? `?teamId=${teamId}` : ''}`),
+  resyncCompliance: (teamId?: number) =>
+    http<ComplianceResult>(`/api/compliance/resync${teamId ? `?teamId=${teamId}` : ''}`, { method: 'POST' }),
   getSettings: () => http<SettingsDto>('/api/settings'),
   updateSettings: (body: SettingsUpdate) =>
     http<void>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),

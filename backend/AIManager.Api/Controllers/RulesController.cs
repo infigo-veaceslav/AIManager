@@ -84,21 +84,5 @@ public class RulesController : ControllerBase
         return Accepted(new { jobId });
     }
 
-    private void SyncRecurringJob(ChaseRule rule)
-    {
-        var jobId = $"rule-{rule.Id}-{rule.Type}".ToLowerInvariant();
-        if (!rule.Enabled)
-        {
-            _recurring.RemoveIfExists(jobId);
-            return;
-        }
-
-        var options = new RecurringJobOptions { TimeZone = WorkingDays.ResolveZone(rule.Team?.Timezone ?? "UTC") };
-        if (rule.Type == ChaseRuleType.TimeLog)
-            _recurring.AddOrUpdate<TimeLogChaserJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), rule.Cron, options);
-        else if (rule.Type == ChaseRuleType.TaskUpdate)
-            _recurring.AddOrUpdate<TaskUpdateTrackerJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), rule.Cron, options);
-        else if (rule.Type == ChaseRuleType.SupportDigest)
-            _recurring.AddOrUpdate<SupportDigestJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), rule.Cron, options);
-    }
+    private void SyncRecurringJob(ChaseRule rule) => RecurringJobs.Sync(_recurring, rule);
 }

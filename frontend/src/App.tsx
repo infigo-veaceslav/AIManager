@@ -77,19 +77,31 @@ function Bool({ v }: { v: boolean }) {
 }
 
 function CompliancePanel() {
-  const { data, error, loading, reload } = useAsync<ComplianceResult>(() => api.getCompliance())
+  const { data, error, reload } = useAsync<ComplianceResult>(() => api.getCompliance())
+  const [resyncing, setResyncing] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const resync = async () => {
+    setResyncing(true); setMsg(null)
+    try { await api.resyncCompliance(); await reload() }
+    catch { setMsg('Resync failed — Jira may be throttling/unavailable. Try again shortly.') }
+    finally { setResyncing(false) }
+  }
   return (
     <section>
       <div className="panel-head">
         <h2>Compliance — previous working day</h2>
-        <button onClick={reload} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</button>
+        <button onClick={resync} disabled={resyncing}>{resyncing ? 'Resyncing…' : 'Resync from Jira'}</button>
       </div>
       {error && <p className="error">{error}</p>}
+      {msg && <p className="error">{msg}</p>}
       {data && (
         <>
           <p className="muted">
-            {data.teamName} · {data.targetDate} · threshold {data.threshold}h · live from Jira ·
-            showing all members ({data.rows.filter((r) => r.active).length} in chase scope)
+            {data.teamName} · {data.targetDate} · threshold {data.threshold}h ·{' '}
+            {data.lastSyncedAt
+              ? `synced ${new Date(data.lastSyncedAt).toLocaleString()}`
+              : 'never synced — click Resync to load'}{' '}
+            · showing all members ({data.rows.filter((r) => r.active).length} in chase scope)
           </p>
           <table>
             <thead><tr><th>Member</th><th>Hours</th><th>Status</th><th>Chase scope</th></tr></thead>

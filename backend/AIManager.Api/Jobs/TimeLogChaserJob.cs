@@ -4,6 +4,7 @@ using System.Text.Json;
 using AIManager.Api.Data;
 using AIManager.Api.Domain;
 using AIManager.Api.Services;
+using AIManager.Api.Services.Compliance;
 using AIManager.Api.Services.Jira;
 using AIManager.Api.Services.Teams;
 using Microsoft.EntityFrameworkCore;
@@ -13,20 +14,29 @@ namespace AIManager.Api.Jobs;
 /// <summary>Chases team members who logged fewer than the threshold hours the previous working day.</summary>
 public class TimeLogChaserJob
 {
-    private const string DefaultTemplate =
+    // Sent before ~noon (e.g. the 09:45 run) — gentle, pre-deadline.
+    private const string MorningTemplate =
         "Hi {firstName} 👋<br><br>Quick reminder to log your time in Jira for <b>{date}</b> — " +
-        "I'm currently seeing only <b>{hours}h</b> logged. Please get your time in by <b>10:00</b>.<br><br>Thanks!";
+        "I'm currently seeing only <b>{hours}h</b>. Please get it in by <b>10:00</b>.<br><br>Thanks!";
+
+    // Sent in the afternoon (e.g. the 14:00 run) — firmer, past the deadline.
+    private const string AfternoonTemplate =
+        "Hi {firstName} 👋<br><br>It's past the <b>10:00</b> deadline and I still see only <b>{hours}h</b> " +
+        "logged for <b>{date}</b>. Please log your time now.<br><br>Thanks!";
 
     private readonly AppDbContext _db;
     private readonly IJiraService _jira;
     private readonly ITeamsService _teams;
+    private readonly IComplianceSnapshotStore _snapshots;
     private readonly ILogger<TimeLogChaserJob> _log;
 
-    public TimeLogChaserJob(AppDbContext db, IJiraService jira, ITeamsService teams, ILogger<TimeLogChaserJob> log)
+    public TimeLogChaserJob(AppDbContext db, IJiraService jira, ITeamsService teams,
+        IComplianceSnapshotStore snapshots, ILogger<TimeLogChaserJob> log)
     {
         _db = db;
         _jira = jira;
         _teams = teams;
+        _snapshots = snapshots;
         _log = log;
     }
 
@@ -86,6 +96,17 @@ public class TimeLogChaserJob
             return;
         }
 
+        // Refresh the compliance snapshot so the dashboard shows fresh data without a manual resync.
+        try
+        {
+            var hoursById = members.ToDictionary(m => m.Id, m => hoursByEmail.TryGetValue(m.Email, out var h) ? h : 0.0);
+            await _snapshots.UpsertAsync(rule.Team.Id, date, hoursById, DateTime.UtcNow, ct);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "TimeLog rule {RuleId}: compliance snapshot refresh failed (non-fatal).", rule.Id);
+        }
+
         _log.LogInformation("TimeLog rule {RuleId}: checking {Count} members for {Date} (threshold {Threshold}h).",
             ruleId, members.Count, date, threshold);
 
@@ -100,19 +121,24 @@ public class TimeLogChaserJob
 
         if (wantsDm)
         {
+            var (slotStartUtc, defaultTemplate) = ResolveSlot(tz);
+            var template = string.IsNullOrWhiteSpace(rule.MessageTemplate) ? defaultTemplate : rule.MessageTemplate!;
+
             foreach (var (member, hours) in under)
             {
-                // Idempotency: don't re-send a DM for this member+date+rule.
+                // Skip only if already chased in the current half-day, so the 14:00 run still nudges
+                // people already messaged at 09:45.
                 var already = await _db.ChaseEvents.AnyAsync(
                     e => e.RuleId == rule.Id && e.MemberId == member.Id &&
-                         e.TargetDate == date && e.Outcome == ChaseOutcome.Sent, ct);
+                         e.TargetDate == date && e.Outcome == ChaseOutcome.Sent &&
+                         e.CreatedAtUtc >= slotStartUtc, ct);
                 if (already)
                 {
-                    _log.LogInformation("Already chased {Member} for {Date}; skipping.", member.Email, date);
+                    _log.LogInformation("Already chased {Member} for {Date} this slot; skipping.", member.Email, date);
                     continue;
                 }
 
-                var message = RenderTemplate(rule.MessageTemplate ?? DefaultTemplate, member, date, hours);
+                var message = RenderTemplate(template, member, date, hours);
                 var recipient = string.IsNullOrWhiteSpace(rule.TestRecipientOverride)
                     ? member.Email
                     : rule.TestRecipientOverride!;
@@ -191,6 +217,16 @@ public class TimeLogChaserJob
             }
         }
         if (changed) await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Start of the current half-day (in the team timezone) and the matching default message.</summary>
+    private static (DateTime SlotStartUtc, string Template) ResolveSlot(string tz)
+    {
+        var zone = WorkingDays.ResolveZone(tz);
+        var local = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone);
+        var isMorning = local.Hour < 12;
+        var slotStartLocal = new DateTimeOffset(local.Year, local.Month, local.Day, isMorning ? 0 : 12, 0, 0, local.Offset);
+        return (slotStartLocal.UtcDateTime, isMorning ? MorningTemplate : AfternoonTemplate);
     }
 
     private static string RenderTemplate(string template, TeamMember member, DateOnly date, double hours)

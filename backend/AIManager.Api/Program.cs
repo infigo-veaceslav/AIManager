@@ -30,6 +30,7 @@ builder.Services.AddDbContext<AppDbContext>(opt => opt.UseNpgsql(connectionStrin
 
 // ---- Settings (DB overrides appsettings/env at runtime) ----
 builder.Services.AddScoped<ISettingsService, SettingsService>();
+builder.Services.AddScoped<AIManager.Api.Services.Compliance.IComplianceSnapshotStore, AIManager.Api.Services.Compliance.ComplianceSnapshotStore>();
 
 // ---- External services (typed HttpClients; URL/auth resolved per request from settings) ----
 builder.Services.AddHttpClient<IJiraService, JiraService>();
@@ -87,25 +88,14 @@ RegisterRecurringJobs(app.Services);
 app.MapControllers();
 app.Run();
 
-// ---- Recurring schedules (one per enabled rule, in the team timezone) ----
+// ---- Recurring schedules (each rule's ;-separated crons, in the team timezone) ----
 static void RegisterRecurringJobs(IServiceProvider services)
 {
     using var scope = services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var manager = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
 
-    var rules = db.ChaseRules.Include(r => r.Team).Where(r => r.Enabled).ToList();
-    foreach (var rule in rules)
-    {
-        var tz = WorkingDays.ResolveZone(rule.Team?.Timezone ?? "UTC");
-        var options = new RecurringJobOptions { TimeZone = tz };
-        var jobId = $"rule-{rule.Id}-{rule.Type}".ToLowerInvariant();
-
-        if (rule.Type == AIManager.Api.Domain.ChaseRuleType.TimeLog)
-            manager.AddOrUpdate<TimeLogChaserJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), rule.Cron, options);
-        else if (rule.Type == AIManager.Api.Domain.ChaseRuleType.TaskUpdate)
-            manager.AddOrUpdate<TaskUpdateTrackerJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), rule.Cron, options);
-        else if (rule.Type == AIManager.Api.Domain.ChaseRuleType.SupportDigest)
-            manager.AddOrUpdate<SupportDigestJob>(jobId, j => j.RunRuleAsync(rule.Id, CancellationToken.None), rule.Cron, options);
-    }
+    // All rules (not only enabled) so disabled rules' stale schedules are cleaned up.
+    foreach (var rule in db.ChaseRules.Include(r => r.Team).ToList())
+        RecurringJobs.Sync(manager, rule);
 }

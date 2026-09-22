@@ -54,7 +54,7 @@ public static class DbSeeder
                 TeamId = team.Id,
                 Type = ChaseRuleType.TimeLog,
                 Enabled = true,
-                Cron = "0 10 * * 1-4",
+                Cron = "45 9 * * 1-4;0 14 * * 1-4", // 09:45 pre-deadline nudge + 14:00 follow-up (Mon–Thu)
                 ThresholdHours = 5,
                 Channel = ChaseChannel.TeamsDm,
                 TestRecipientOverride = Operator, // redirect test DMs to the operator

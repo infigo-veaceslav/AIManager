@@ -14,6 +14,7 @@ public class AppDbContext : DbContext
     public DbSet<TaskUpdateFinding> TaskUpdateFindings => Set<TaskUpdateFinding>();
     public DbSet<AppSettings> AppSettings => Set<AppSettings>();
     public DbSet<TeamsChannel> TeamsChannels => Set<TeamsChannel>();
+    public DbSet<ComplianceSnapshot> ComplianceSnapshots => Set<ComplianceSnapshot>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -51,6 +52,11 @@ public class AppDbContext : DbContext
             e.Property(x => x.Name).IsRequired().HasMaxLength(200);
             e.Property(x => x.TeamId).IsRequired().HasMaxLength(128);
             e.Property(x => x.ChannelId).IsRequired().HasMaxLength(256);
+        });
+
+        b.Entity<ComplianceSnapshot>(e =>
+        {
+            e.HasIndex(x => new { x.TeamId, x.TargetDate, x.MemberId }).IsUnique();
         });
 
         b.Entity<ChaseEvent>(e =>
