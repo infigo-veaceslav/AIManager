@@ -89,6 +89,8 @@ export interface ComplianceRow {
   hours: number
   ok: boolean
   active: boolean
+  chased: boolean
+  chasedAt: string | null
 }
 
 export interface ComplianceResult {

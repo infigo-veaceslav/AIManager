@@ -70,13 +70,15 @@ public class TimeLogChaserJob
         var tz = rule.Team.Timezone;
         var date = WorkingDays.PreviousWorkingDay(tz, rule.Team.WorkingDays, DateTimeOffset.UtcNow);
         var threshold = rule.ThresholdHours ?? 5.0;
-        var members = rule.Team.Members.Where(m => m.Active).ToList();
+        var allMembers = rule.Team.Members.ToList();          // whole roster → compliance snapshot
+        var members = allMembers.Where(m => m.Active).ToList(); // chase scope → who gets DMed
 
         Dictionary<string, double> hoursByEmail;
         try
         {
-            await EnsureAccountIdsAsync(members, ct);
-            var accountIds = members.Where(m => m.JiraAccountId != null).Select(m => m.JiraAccountId!).ToList();
+            // Query hours for EVERYONE so the snapshot covers the whole roster; chasing stays active-only.
+            await EnsureAccountIdsAsync(allMembers, ct);
+            var accountIds = allMembers.Where(m => m.JiraAccountId != null).Select(m => m.JiraAccountId!).ToList();
             hoursByEmail = await _jira.GetWorklogHoursByEmailAsync(date, accountIds, tz, ct);
         }
         catch (JiraUnavailableException ex)
@@ -101,7 +103,7 @@ public class TimeLogChaserJob
         // Refresh the compliance snapshot so the dashboard shows fresh data without a manual resync.
         try
         {
-            var hoursById = members.ToDictionary(m => m.Id, m => hoursByEmail.TryGetValue(m.Email, out var h) ? h : 0.0);
+            var hoursById = allMembers.ToDictionary(m => m.Id, m => hoursByEmail.TryGetValue(m.Email, out var h) ? h : 0.0);
             await _snapshots.UpsertAsync(rule.Team.Id, date, hoursById, DateTime.UtcNow, ct);
         }
         catch (Exception ex)

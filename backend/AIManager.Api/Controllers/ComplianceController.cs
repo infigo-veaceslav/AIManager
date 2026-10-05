@@ -23,8 +23,9 @@ public class ComplianceController : ControllerBase
         _snapshots = snapshots;
     }
 
-    // Active = in the chase scope (only Active members get DMed).
-    public record ComplianceRow(int MemberId, string DisplayName, string Email, double Hours, bool Ok, bool Active);
+    // Active = in the chase scope; Chased = a reminder was actually Sent for the target day.
+    public record ComplianceRow(int MemberId, string DisplayName, string Email, double Hours, bool Ok, bool Active,
+        bool Chased, DateTime? ChasedAt);
     public record ComplianceResult(int TeamId, string TeamName, DateOnly TargetDate, double Threshold,
         DateTime? LastSyncedAt, List<ComplianceRow> Rows);
 
@@ -42,9 +43,10 @@ public class ComplianceController : ControllerBase
         var snapshot = await _snapshots.GetAsync(team.Id, target);
         var hoursById = snapshot.ToDictionary(s => s.MemberId, s => s.Hours);
         DateTime? lastSynced = snapshot.Count > 0 ? snapshot.Max(s => s.SyncedAtUtc) : null;
+        var chased = await GetChasedAsync(team.Id, target);
 
         return new ComplianceResult(team.Id, team.Name, target, threshold, lastSynced,
-            BuildRows(members, hoursById, threshold));
+            BuildRows(members, hoursById, threshold, chased));
     }
 
     /// <summary>
@@ -81,9 +83,10 @@ public class ComplianceController : ControllerBase
         var hoursById = members.ToDictionary(m => m.Id, m => hoursByEmail.TryGetValue(m.Email, out var h) ? h : 0.0);
         var now = DateTime.UtcNow;
         await _snapshots.UpsertAsync(team.Id, target, hoursById, now);
+        var chased = await GetChasedAsync(team.Id, target);
 
         return new ComplianceResult(team.Id, team.Name, target, threshold, now,
-            BuildRows(members, hoursById, threshold));
+            BuildRows(members, hoursById, threshold, chased));
     }
 
     private async Task<(Team Team, DateOnly Target, double Threshold, List<TeamMember> Members)?> LoadContextAsync(
@@ -102,14 +105,33 @@ public class ComplianceController : ControllerBase
         return (team, target, threshold, team.Members.ToList());
     }
 
-    private static List<ComplianceRow> BuildRows(List<TeamMember> members, IReadOnlyDictionary<int, double> hoursById, double threshold) =>
+    private static List<ComplianceRow> BuildRows(List<TeamMember> members, IReadOnlyDictionary<int, double> hoursById,
+        double threshold, IReadOnlyDictionary<int, DateTime> chased) =>
         members
             .Select(m =>
             {
                 var hours = hoursById.TryGetValue(m.Id, out var h) ? h : 0.0;
-                return new ComplianceRow(m.Id, m.DisplayName, m.Email, Math.Round(hours, 2), hours >= threshold, m.Active);
+                var wasChased = chased.TryGetValue(m.Id, out var at);
+                return new ComplianceRow(m.Id, m.DisplayName, m.Email, Math.Round(hours, 2), hours >= threshold, m.Active,
+                    wasChased, wasChased ? at : null);
             })
             .OrderByDescending(r => r.Active)
             .ThenBy(r => r.Hours)
             .ToList();
+
+    /// <summary>Members Sent a TimeLog reminder for this target day → latest send time.</summary>
+    private async Task<Dictionary<int, DateTime>> GetChasedAsync(int teamId, DateOnly target)
+    {
+        var ruleIds = await _db.ChaseRules
+            .Where(r => r.TeamId == teamId && r.Type == ChaseRuleType.TimeLog)
+            .Select(r => r.Id).ToListAsync();
+        if (ruleIds.Count == 0) return new Dictionary<int, DateTime>();
+
+        return await _db.ChaseEvents
+            .Where(e => ruleIds.Contains(e.RuleId) && e.TargetDate == target
+                        && e.Outcome == ChaseOutcome.Sent && e.MemberId != null)
+            .GroupBy(e => e.MemberId!.Value)
+            .Select(g => new { MemberId = g.Key, Last = g.Max(x => x.CreatedAtUtc) })
+            .ToDictionaryAsync(x => x.MemberId, x => x.Last);
+    }
 }

@@ -111,20 +111,24 @@ function CompliancePanel() {
             {data.lastSyncedAt
               ? `synced ${fmt(data.lastSyncedAt)}`
               : 'never synced — click Resync to load'}{' '}
-            · showing all members ({data.rows.filter((r) => r.active).length} in chase scope)
+            · showing all members ({data.rows.filter((r) => r.active).length} monitored)
+          </p>
+          <p className="muted" style={{ marginTop: 0 }}>
+            "Monitored" = watched for compliance; "Chased" = a reminder was actually sent for this day (full log in Chase history).
           </p>
           <table>
-            <thead><tr><th>Member</th><th>Hours</th><th>Status</th><th>Chase scope</th></tr></thead>
+            <thead><tr><th>Member</th><th>Hours</th><th>Status</th><th>Monitored</th><th>Chased</th></tr></thead>
             <tbody>
               {data.rows.map((r) => (
                 <tr key={r.memberId} className={r.active ? '' : 'row-muted'}>
                   <td>{r.displayName}</td>
                   <td>{r.hours.toFixed(2)}h</td>
                   <td>{r.ok ? <span className="ok">OK</span> : <span className="bad">Under</span>}</td>
-                  <td>{r.active ? <span className="ok">✓ chased</span> : <span className="muted">not chased</span>}</td>
+                  <td>{r.active ? <span className="ok">✓ monitored</span> : <span className="muted">not monitored</span>}</td>
+                  <td>{r.chased ? <span className="ok">✓ chased {fmt(r.chasedAt!)}</span> : <span className="muted">—</span>}</td>
                 </tr>
               ))}
-              {data.rows.length === 0 && <tr><td colSpan={4} className="muted">No members.</td></tr>}
+              {data.rows.length === 0 && <tr><td colSpan={5} className="muted">No members.</td></tr>}
             </tbody>
           </table>
         </>
